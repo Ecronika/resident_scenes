@@ -19,7 +19,8 @@ installer scenes, own image upload, rights managed by main users in the card, un
 
 ## Installation
 
-1. HACS → Custom repositories → add this repository as *Integration*, install, restart Home Assistant.
+1. Home Assistant 2026.11 and later: Settings → Marketplace → custom repositories → add `Ecronika/resident_scenes`
+   as *Integration*, install, restart Home Assistant. Before 2026.11: the same in HACS → Custom repositories.
 2. Settings → Devices & services → Add integration → **Resident Scenes**.
 3. Give the label `resident_scenes` to the lights, covers, climate, switches, fans, media players and scenes residents
    may use (on the entity or its device).
