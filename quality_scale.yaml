@@ -1,0 +1,39 @@
+# Self-assessment against the Home Assistant Integration Quality Scale.
+# Kept at the repository root: hassfest validates this file only for core integrations.
+rules:
+  # Bronze
+  action-setup: exempt  # stage 1 has no own actions (capture comes with stage 2)
+  appropriate-polling: exempt  # no polling
+  brands: done  # local brand/ folder (supported since Home Assistant 2026.3)
+  common-modules: done
+  config-flow: done
+  config-flow-test-coverage: done
+  dependency-transparency: done  # no requirements
+  docs-actions: exempt
+  docs-high-level-description: done
+  docs-installation-instructions: done
+  docs-removal-instructions: done
+  entity-event-setup: done
+  entity-unique-id: done
+  has-entity-name: done
+  runtime-data: done
+  test-before-configure: exempt  # nothing to connect to
+  test-before-setup: exempt
+  unique-config-entry: done  # single_config_entry
+  # Silver
+  action-exceptions: exempt
+  config-entry-unloading: done
+  docs-configuration-parameters: done
+  docs-installation-parameters: done
+  entity-unavailable: exempt  # scenes are always available, unreachable devices are skipped
+  integration-owner: done  # @Ecronika
+  log-when-unavailable: exempt
+  parallel-updates: done
+  reauthentication-flow: exempt
+  test-coverage: done  # above 95 %
+  # Gold (selected)
+  diagnostics: done
+  repair-issues: todo  # stage 2
+  entity-translations: exempt  # entity names are user given
+  exception-translations: done  # error codes translated in the card
+  icon-translations: exempt

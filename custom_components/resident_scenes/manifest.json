@@ -1,0 +1,15 @@
+{
+  "domain": "resident_scenes",
+  "name": "Resident Scenes",
+  "after_dependencies": ["frontend", "logbook"],
+  "codeowners": ["@Ecronika"],
+  "config_flow": true,
+  "dependencies": ["http", "websocket_api"],
+  "documentation": "https://github.com/Ecronika/resident_scenes",
+  "integration_type": "service",
+  "iot_class": "calculated",
+  "issue_tracker": "https://github.com/Ecronika/resident_scenes/issues",
+  "requirements": [],
+  "single_config_entry": true,
+  "version": "0.1.0"
+}

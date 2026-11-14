@@ -1,0 +1,42 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Card harness</title><!-- Manual check of the card with a fake hass object: open this file in a browser. -->
+<style>body{font-family:sans-serif;background:#eee;padding:16px;--primary-color:#03a9f4;--divider-color:#ccc;--secondary-background-color:#f2f2f2}</style>
+</head><body>
+<div id="manage" style="width:900px"></div>
+<div id="fav" style="width:400px;margin-top:16px"></div>
+<script src="../custom_components/resident_scenes/frontend/resident-scenes-card.js"></script>
+<script>
+window.calls = [];
+const data = {
+  version: "0.1.0", can_edit: true, name_length: 30, favorite_slots: 4,
+  scenes: [{ id: "s1", name: "Abend <b>x</b>", area_id: "kitchen", image: null, kind: "resident", version: 1, entity_id: "scene.abend",
+    steps: [{ entity_id: "light.kitchen", state: "on", attributes: { brightness: 128 } },
+            { entity_id: "media_player.kitchen", music: "favorite", volume: 0.4, favorite_id: "FV:2/1", favorite_name: "Sport" }], image_url: null }],
+  favorites: { kitchen: ["s1", null, null, null], _house: [null, null, null, null] },
+  foreign_scenes: [{ entity_id: "scene.knx_tv", area_id: "kitchen", knx: true }], images: [],
+};
+const hass = {
+  locale: { language: "de" },
+  states: { "light.kitchen": { state: "on", attributes: { friendly_name: "Küche Licht" } },
+            "media_player.kitchen": { state: "playing", attributes: { friendly_name: "Küche Sonos" } },
+            "scene.knx_tv": { state: "unknown", attributes: { friendly_name: "KNX TV" } } },
+  entities: {}, devices: {}, areas: { kitchen: { name: "Küche" } },
+  connection: { subscribeMessage: async () => () => {} },
+  callService: (...a) => window.calls.push(["service", ...a]),
+  callWS: async (msg) => {
+    window.calls.push(msg);
+    if (msg.type === "resident_scenes/list") return data;
+    if (msg.type === "resident_scenes/devices") return { entities: [
+      { entity_id: "light.kitchen", name: "Küche Licht", domain: "light", area_id: "kitchen", available: true },
+      { entity_id: "cover.kitchen", name: "Küche Rollo", domain: "cover", area_id: "kitchen", available: false },
+      { entity_id: "media_player.kitchen", name: "Küche Sonos", domain: "media_player", area_id: "kitchen", available: true }],
+      favorites: [{ id: "FV:2/1", name: "Sport" }, { id: "FV:2/2", name: "News" }] };
+    if (msg.type === "resident_scenes/save") { const e = new Error("x"); e.code = "version_conflict"; throw e; }
+    return null;
+  },
+};
+for (const [id, cfg] of [["manage", { scope: "area", area: "kitchen", view: "manage" }], ["fav", { scope: "area", area: "kitchen", view: "favorites" }]]) {
+  const el = document.createElement("resident-scenes-card");
+  el.setConfig(cfg); document.getElementById(id).appendChild(el); el.hass = hass;
+}
+</script></body></html>

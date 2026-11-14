@@ -1,0 +1,36 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Resident Scenes",
+        "description": "Lets residents without admin rights create and edit scenes in a dashboard card."
+      }
+    },
+    "abort": {
+      "single_instance_allowed": "Resident Scenes is already set up."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Resident Scenes",
+        "data": {
+          "label": "Label releasing devices for scenes",
+          "users_without_edit": "Accounts without edit right",
+          "panel_users": "Panel accounts (no edit right by default)",
+          "panels_with_edit": "Panel accounts with edit right",
+          "scenes_per_area": "Scenes per area",
+          "house_scenes": "House scenes",
+          "steps_per_scene": "Steps per scene",
+          "name_length": "Maximum name length",
+          "favorite_slots": "Favorite slots per area and for the house",
+          "image_dir": "Image library folder (inside the config folder)"
+        },
+        "data_description": {
+          "label": "Lights, covers, climate, switches, fans, media players and scenes with this label (on the entity or its device) can be used in scenes.",
+          "image_dir": "An image named after an area id is the default image of that area."
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,36 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Bewohnerszenen",
+        "description": "Bewohner ohne Administratorrecht legen Szenen in einer Dashboard-Karte selbst an und ändern sie."
+      }
+    },
+    "abort": {
+      "single_instance_allowed": "Bewohnerszenen ist bereits eingerichtet."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Bewohnerszenen",
+        "data": {
+          "label": "Label für die Gerätefreigabe",
+          "users_without_edit": "Konten ohne Bearbeitungsrecht",
+          "panel_users": "Panel-Konten (voreingestellt ohne Bearbeitungsrecht)",
+          "panels_with_edit": "Panel-Konten mit Bearbeitungsrecht",
+          "scenes_per_area": "Szenen je Raum",
+          "house_scenes": "Haus-Szenen",
+          "steps_per_scene": "Schritte je Szene",
+          "name_length": "Längster Name",
+          "favorite_slots": "Favoritenplätze je Raum und fürs Haus",
+          "image_dir": "Ordner der Bildbibliothek (im Konfigurationsordner)"
+        },
+        "data_description": {
+          "label": "Licht, Beschattung, Klima, Schalter, Lüfter, Musik und Szenen mit diesem Label (an der Entität oder ihrem Gerät) sind in Szenen verwendbar.",
+          "image_dir": "Ein Bild mit der Kennung eines Raums als Namen ist das Standardbild dieses Raums."
+        }
+      }
+    }
+  }
+}
