@@ -1,0 +1,5 @@
+capture:
+  target:
+    entity:
+      integration: resident_scenes
+      domain: scene

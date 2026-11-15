@@ -1,0 +1,7 @@
+{
+  "services": {
+    "capture": {
+      "service": "mdi:camera-iris"
+    }
+  }
+}

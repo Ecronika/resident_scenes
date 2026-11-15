@@ -19,12 +19,13 @@ from custom_components.resident_scenes.const import (
 )
 from custom_components.resident_scenes.diagnostics import async_get_config_entry_diagnostics
 from custom_components.resident_scenes.logbook import async_describe_events
-from custom_components.resident_scenes.model import async_activate, can_edit
+from custom_components.resident_scenes.model import can_edit
 from homeassistant.auth.models import User
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
 from homeassistant.helpers import entity_registry as er
 from homeassistant.setup import async_setup_component
+from tests.conftest import run_scene
 
 ROOT = Path(__file__).parent.parent / "custom_components" / DOMAIN
 
@@ -52,7 +53,7 @@ def test_versions_match() -> None:
     manifest = json.loads((ROOT / "manifest.json").read_text())
     card = (ROOT / "frontend" / "resident-scenes-card.js").read_text()
     assert manifest["version"] == VERSION
-    assert f'const VERSION = "{VERSION}";' in card
+    assert f'VERSION = "{VERSION}"' in card
 
 
 async def test_flows(hass: HomeAssistant) -> None:
@@ -65,6 +66,8 @@ async def test_flows(hass: HomeAssistant) -> None:
     await hass.async_block_till_done()
 
     result = await hass.config_entries.options.async_init(entry.entry_id)
+    assert result["type"] is FlowResultType.MENU
+    result = await hass.config_entries.options.async_configure(result["flow_id"], {"next_step_id": "settings"})
     assert result["type"] is FlowResultType.FORM
     result = await hass.config_entries.options.async_configure(
         result["flow_id"],
@@ -74,6 +77,10 @@ async def test_flows(hass: HomeAssistant) -> None:
             "house_scenes": 30,
             "steps_per_scene": 150,
             "name_length": 30,
+            "max_delay": 600,
+            "image_side": 1600,
+            "image_kb": 500,
+            "image_count": 200,
             "favorite_slots": 4,
             "image_dir": "resident_scenes",
         },
@@ -94,7 +101,9 @@ async def test_create_capture_and_activate(
     assert {e["entity_id"] for e in res["result"]["entities"]} == {
         "light.kitchen",
         "cover.kitchen",
+        "climate.kitchen",
         "media_player.kitchen",
+        "media_player.sonos_kitchen",
     }  # no lock, no unlabelled light, no other area
     assert {"id": "FV:2/1", "name": "Sport"} in res["result"]["favorites"]
 
@@ -105,7 +114,7 @@ async def test_create_capture_and_activate(
         steps=[
             {"entity_id": "light.kitchen", "mode": "capture"},
             {"entity_id": "cover.kitchen", "mode": "off"},
-            {"entity_id": "media_player.kitchen", "mode": "capture"},
+            {"entity_id": "media_player.sonos_kitchen", "mode": "capture"},
         ],
     )
     assert res["success"], res
@@ -134,11 +143,10 @@ async def test_create_capture_and_activate(
     close = async_mock_service(hass, "cover", "close_cover")
     volume = async_mock_service(hass, "media_player", "volume_set")
     play = async_mock_service(hass, "media_player", "play_media")
-    await hass.services.async_call("scene", "turn_on", {"entity_id": entity_id}, blocking=True)
-    await hass.async_block_till_done()
+    await run_scene(hass, entity_id)
     assert turn_on[0].data["brightness"] == 128
     assert len(close) == 1
-    assert volume[0].data["volume_level"] == 0.4
+    assert volume[0].data["volume_level"] == 0.5
     assert play[0].data["media_content_id"] == "FV:2/1"
     assert play[0].data["media_content_type"] == "favorite_item_id"
 
@@ -165,7 +173,7 @@ async def test_validation(
     async def save(**kw):
         return await call(type=f"{DOMAIN}/save", **{"name": "A", "area_id": "kitchen", "steps": [], **kw})
 
-    fav_step = {"entity_id": "media_player.kitchen", "mode": "music", "music": "favorite", "volume": 0.5}
+    fav_step = {"entity_id": "media_player.sonos_kitchen", "mode": "music", "music": "favorite", "volume": 0.5}
     for steps, code in (
         ([{"entity_id": "light.unreleased", "mode": "capture"}], "entity_not_allowed"),
         ([{"entity_id": "lock.door", "mode": "capture"}], "entity_not_allowed"),
@@ -232,7 +240,7 @@ async def test_rights(
     ):
         hass.config_entries.async_update_entry(setup, options=options)
         await hass.async_block_till_done()
-        listing = await call(type=f"{DOMAIN}/list")
+        listing = await call(type=f"{DOMAIN}/list", scope="_house")
         assert listing["result"]["can_edit"] is allowed
         res = await call(type=f"{DOMAIN}/save", name=f"S{len(options)}{allowed}", steps=[])
         assert res["success"] is allowed
@@ -256,7 +264,7 @@ async def test_favorites_delete_and_subscribe(
     away_steps = [{"entity_id": "light.hall", "mode": "off"}]
     house = (await call(type=f"{DOMAIN}/save", name="Away", steps=away_steps))["result"]["scene_id"]
     await hass.async_block_till_done()
-    await call(type=f"{DOMAIN}/list")
+    await call(type=f"{DOMAIN}/list", scope="_house")
     assert call.events and call.events[0]["event"] == {"changed": True}
 
     fav = f"{DOMAIN}/set_favorite"
@@ -268,16 +276,15 @@ async def test_favorites_delete_and_subscribe(
     assert (await call(type=fav, scope="made-up", slot=0, scene_id=None))["error"]["code"] == "invalid_slot"
     assert "made-up" not in setup.runtime_data.favorites
     assert (await call(type=fav, scope="_house", slot=0, scene_id=house))["success"]
-    listing = (await call(type=f"{DOMAIN}/list"))["result"]
-    assert listing["favorites"]["kitchen"] == [None, None, cook, None]
-    assert listing["favorites"]["_house"][0] == house
+    assert (await call(type=f"{DOMAIN}/list", scope="kitchen"))["result"]["favorites"] == [None, None, cook, None]
+    assert (await call(type=f"{DOMAIN}/list", scope="_house"))["result"]["favorites"][0] == house
 
     entity_id = er.async_get(hass).async_get_entity_id("scene", DOMAIN, cook)
     assert (await call(type=f"{DOMAIN}/delete", scene_id=cook))["success"]
     await hass.async_block_till_done()
     assert hass.states.get(entity_id) is None
     assert er.async_get(hass).async_get(entity_id) is None
-    assert (await call(type=f"{DOMAIN}/list"))["result"]["favorites"]["kitchen"] == [None] * 4
+    assert (await call(type=f"{DOMAIN}/list", scope="kitchen"))["result"]["favorites"] == [None] * 4
     assert (await call(type=f"{DOMAIN}/delete", scene_id=cook))["error"]["code"] == "not_found"
 
     # moving a scene to another scope empties its slots
@@ -290,7 +297,7 @@ async def test_favorites_delete_and_subscribe(
         steps=[{"entity_id": "light.hall", "mode": "keep"}],
     )
     assert res["success"]
-    assert (await call(type=f"{DOMAIN}/list"))["result"]["favorites"]["_house"] == [None] * 4
+    assert (await call(type=f"{DOMAIN}/list", scope="_house"))["result"]["favorites"] == [None] * 4
 
 
 async def test_skipped_and_failed_steps(
@@ -298,7 +305,7 @@ async def test_skipped_and_failed_steps(
 ) -> None:
     """Unreachable devices and missing favorites are skipped and logged, the rest runs."""
     call = await _ws(hass, hass_ws_client, resident_token)
-    news = {"entity_id": "media_player.kitchen", "mode": "music", "music": "favorite", "volume": 0.3}
+    news = {"entity_id": "media_player.sonos_kitchen", "mode": "music", "music": "favorite", "volume": 0.3}
     res = await call(
         type=f"{DOMAIN}/save",
         name="Mix",
@@ -316,10 +323,9 @@ async def test_skipped_and_failed_steps(
     hass.states.async_set("cover.kitchen", "unavailable")
     hass.states.async_set("sensor.sonos_favorites", "1", {"items": {"FV:2/1": "Sport"}})
     turn_off = async_mock_service(hass, "light", "turn_off")
-    await hass.services.async_call("scene", "turn_on", {"entity_id": entity_id}, blocking=True)
-    await hass.async_block_till_done()
+    await run_scene(hass, entity_id)
     assert len(turn_off) == 1
-    assert skipped[0].data["entities"] == ["cover.kitchen", "media_player.kitchen"]
+    assert skipped[0].data["entities"] == ["cover.kitchen", "media_player.sonos_kitchen"]
 
 
 async def test_music_off_on_and_scene_call(hass: HomeAssistant, setup: MockConfigEntry, hass_ws_client) -> None:
@@ -347,8 +353,8 @@ async def test_music_off_on_and_scene_call(hass: HomeAssistant, setup: MockConfi
     )
     loud = {"entity_id": "media_player.kitchen", "mode": "music", "music": "on", "volume": 0.7}
     on = await store.async_save_scene({"name": "Loud", "steps": [loud]}, "user")
-    await async_activate(hass, setup, off, None)
-    await async_activate(hass, setup, on, None)
+    await store.runner.async_apply(off, off["steps"], None)
+    await store.runner.async_apply(on, on["steps"], None)
     assert len(stop) == 1 and len(media_play) == 1
     assert volume[0].data["volume_level"] == 0.7
     assert scene_call[0].data["entity_id"] == "scene.knx_tv"
@@ -391,7 +397,7 @@ async def test_images(
 
 async def _check_images(hass, hass_client, hass_client_no_auth, hass_ws_client, resident_token) -> None:
     call = await _ws(hass, hass_ws_client, resident_token)
-    listing = (await call(type=f"{DOMAIN}/list"))["result"]
+    listing = (await call(type=f"{DOMAIN}/devices"))["result"]
     assert [i["name"] for i in listing["images"]] == ["kitchen.jpg", "sofa.png"]
     assert "authSig=" in listing["images"][0]["url"]
 
@@ -452,7 +458,7 @@ async def test_not_loaded(hass: HomeAssistant, setup: MockConfigEntry, hass_ws_c
     """Commands answer cleanly while the integration is unloaded."""
     await hass.config_entries.async_unload(setup.entry_id)
     call = await _ws(hass, hass_ws_client, hass_access_token)
-    assert (await call(type=f"{DOMAIN}/list"))["error"]["code"] == "not_loaded"
+    assert (await call(type=f"{DOMAIN}/list", scope="_house"))["error"]["code"] == "not_loaded"
 
 
 async def test_diagnostics_and_unload(hass: HomeAssistant, setup: MockConfigEntry) -> None:

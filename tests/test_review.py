@@ -11,6 +11,7 @@ from pytest_homeassistant_custom_component.common import async_mock_service
 from custom_components.resident_scenes.const import DOMAIN, EVENT_SKIPPED
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import area_registry as ar, entity_registry as er
+from tests.conftest import run_scene
 from tests.test_init import _ws
 
 SAVE = f"{DOMAIN}/save"
@@ -19,7 +20,7 @@ LIST = f"{DOMAIN}/list"
 
 async def _image_url(call, name):
     """Return the signed address of one library image, None if not listed."""
-    images = (await call(type=LIST))["result"]["images"]
+    images = (await call(type=f"{DOMAIN}/devices"))["result"]["images"]
     return next((i["url"] for i in images if i["name"] == name), None)
 
 
@@ -30,6 +31,12 @@ async def _scene(hass, call, **msg):
     await hass.async_block_till_done()
     scene_id = res["result"]["scene_id"]
     return scene_id, er.async_get(hass).async_get_entity_id("scene", DOMAIN, scene_id)
+
+
+async def _settings(hass, entry):
+    """Open the settings page of the options."""
+    flow = await hass.config_entries.options.async_init(entry.entry_id)
+    return await hass.config_entries.options.async_configure(flow["flow_id"], {"next_step_id": "settings"})
 
 
 @pytest.fixture(autouse=True)
@@ -94,8 +101,7 @@ async def test_b2_unreleased_or_renamed_device(hass, setup, hass_ws_client, resi
     async_mock_service(hass, "cover", "close_cover")
     skipped = []
     hass.bus.async_listen(EVENT_SKIPPED, skipped.append)
-    await hass.services.async_call("scene", "turn_on", {"entity_id": entity_id}, blocking=True)
-    await hass.async_block_till_done()
+    await run_scene(hass, entity_id)
     assert turn_on == []
     assert skipped[0].data["entities"] == ["light.kitchen"]
     keep = [{"entity_id": "light.kitchen", "mode": "keep"}, {"entity_id": "cover.kitchen", "mode": "keep"}]
@@ -129,8 +135,7 @@ async def test_e2_failed_step_goes_to_the_logbook(hass, setup, hass_ws_client, r
     hass.services.async_register("light", "turn_off", broken)
     skipped = []
     hass.bus.async_listen(EVENT_SKIPPED, skipped.append)
-    await hass.services.async_call("scene", "turn_on", {"entity_id": entity_id}, blocking=True)
-    await hass.async_block_till_done()
+    await run_scene(hass, entity_id)
     assert skipped[0].data["failed"] == ["light.kitchen"]
 
 
@@ -147,7 +152,7 @@ async def test_k1_read_only_account_may_not_edit(
     hass, setup, hass_ws_client, hass_read_only_access_token
 ):
     read_only = await _ws(hass, hass_ws_client, hass_read_only_access_token)
-    assert (await read_only(type=LIST))["result"]["can_edit"] is False
+    assert (await read_only(type=LIST, scope="_house"))["result"]["can_edit"] is False
     assert (await read_only(type=SAVE, name="X", steps=[]))["error"]["code"] == "unauthorized"
 
 
@@ -160,14 +165,14 @@ async def test_k1_resident_runs_with_own_account(hass, setup, hass_ws_client, re
     turn_on = async_mock_service(hass, "light", "turn_on")
     run = {"type": "call_service", "domain": "scene", "service": "turn_on", "service_data": {"entity_id": entity_id}}
     assert (await resident(**run))["success"]
-    await hass.async_block_till_done()
+    await hass.async_block_till_done(wait_background_tasks=True)
     assert turn_on[0].context.user_id == hass_read_only_user.id
 
 
 async def test_k2_removed_account_does_not_block_the_options(hass, setup):
     hass.config_entries.async_update_entry(setup, options={"users_without_edit": ["id-of-a-removed-account"]})
     await hass.async_block_till_done()
-    flow = await hass.config_entries.options.async_init(setup.entry_id)
+    flow = await _settings(hass, setup)
     suggested = {
         str(key): key.description["suggested_value"]
         for key in flow["data_schema"].schema
@@ -181,13 +186,17 @@ async def test_k3_image_dir_and_file_names(hass, setup, hass_ws_client, resident
     assert await _image_url(call, "sofa.png")
     assert await _image_url(call, "a#b.png") is None  # '#' would break the signed address
 
-    flow = await hass.config_entries.options.async_init(setup.entry_id)
+    flow = await _settings(hass, setup)
     form = {
         "label": "resident_scenes",
         "scenes_per_area": 20,
         "house_scenes": 30,
         "steps_per_scene": 150,
         "name_length": 30,
+        "max_delay": 600,
+        "image_side": 1600,
+        "image_kb": 500,
+        "image_count": 200,
         "favorite_slots": 4,
         "image_dir": "/etc",
     }

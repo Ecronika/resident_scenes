@@ -14,26 +14,71 @@
     "step": {
       "init": {
         "title": "Resident Scenes",
+        "description": "What do you want to change?",
+        "menu_options": {
+          "settings": "Settings",
+          "template": "Load template"
+        }
+      },
+      "settings": {
+        "title": "Settings",
         "data": {
           "label": "Label releasing devices for scenes",
+          "main_users": "Main users (manage edit rights in the card)",
           "users_without_edit": "Accounts without edit right",
           "panel_users": "Panel accounts (no edit right by default)",
           "panels_with_edit": "Panel accounts with edit right",
           "scenes_per_area": "Scenes per area",
           "house_scenes": "House scenes",
           "steps_per_scene": "Steps per scene",
+          "max_delay": "Longest delay of a step (seconds)",
           "name_length": "Maximum name length",
           "favorite_slots": "Favorite slots per area and for the house",
-          "image_dir": "Image library folder (inside the config folder)"
+          "image_dir": "Image library folder (inside the config folder)",
+          "image_side": "Uploaded images: longest side (pixels)",
+          "image_kb": "Uploaded images: largest file (kB)",
+          "image_count": "Uploaded images: most images"
         },
         "data_description": {
           "label": "Lights, covers, climate, switches, fans, media players and scenes with this label (on the entity or its device) can be used in scenes.",
           "image_dir": "An image named after an area id is the default image of that area."
         }
+      },
+      "template": {
+        "title": "Load template",
+        "description": "Options and installer scenes from a JSON or YAML file. Installer scenes with the same key are replaced. {error}",
+        "data": {
+          "template": "File (inside the config folder)"
+        }
       }
     },
     "error": {
-      "outside_config": "The folder must be inside the config folder."
+      "outside_config": "The file or folder must be inside the config folder.",
+      "invalid_template": "The template could not be loaded.",
+      "not_loaded": "Resident Scenes is not loaded."
+    }
+  },
+  "issues": {
+    "broken_steps": {
+      "title": "Scene {scene} has missing parts",
+      "description": "These parts of the scene no longer exist and are skipped when it runs: {items}. Edit the scene in the card or restore the devices."
+    }
+  },
+  "services": {
+    "capture": {
+      "name": "Capture current state",
+      "description": "Takes over the current state of the devices into the scene, e.g. on a long press of a push button."
+    }
+  },
+  "exceptions": {
+    "not_loaded": {
+      "message": "Resident Scenes is not loaded."
+    },
+    "not_a_scene": {
+      "message": "{entity} is not a resident scene."
+    },
+    "capture_failed": {
+      "message": "The state could not be captured: {error}"
     }
   }
 }

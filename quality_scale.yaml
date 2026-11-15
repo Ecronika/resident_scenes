@@ -2,14 +2,14 @@
 # Kept at the repository root: hassfest validates this file only for core integrations.
 rules:
   # Bronze
-  action-setup: exempt  # stage 1 has no own actions (capture comes with stage 2)
+  action-setup: done  # resident_scenes.capture, registered in async_setup
   appropriate-polling: exempt  # no polling
   brands: done  # local brand/ folder (supported since Home Assistant 2026.3)
   common-modules: done
   config-flow: done
   config-flow-test-coverage: done
   dependency-transparency: done  # no requirements
-  docs-actions: exempt
+  docs-actions: done
   docs-high-level-description: done
   docs-installation-instructions: done
   docs-removal-instructions: done
@@ -21,7 +21,7 @@ rules:
   test-before-setup: exempt
   unique-config-entry: done  # single_config_entry
   # Silver
-  action-exceptions: exempt
+  action-exceptions: done
   config-entry-unloading: done
   docs-configuration-parameters: done
   docs-installation-parameters: done
@@ -33,7 +33,7 @@ rules:
   test-coverage: done  # above 95 %
   # Gold (selected)
   diagnostics: done
-  repair-issues: todo  # stage 2
+  repair-issues: done  # one issue per scene with a missing device, scene or favorite
   entity-translations: exempt  # entity names are user given
-  exception-translations: todo  # card translates error codes; server-side translated exceptions come with stage 2 actions
+  exception-translations: done
   icon-translations: exempt

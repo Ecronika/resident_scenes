@@ -2,38 +2,83 @@
   "config": {
     "step": {
       "user": {
-        "title": "Bewohnerszenen",
-        "description": "Bewohner ohne Administratorrecht legen Szenen in einer Dashboard-Karte selbst an und ändern sie."
+        "title": "Resident Scenes",
+        "description": "Bewohner ohne Administratorrecht legen Szenen in einer Dashboard-Karte an und ändern sie."
       }
     },
     "abort": {
-      "single_instance_allowed": "Bewohnerszenen ist bereits eingerichtet."
+      "single_instance_allowed": "Resident Scenes ist schon eingerichtet."
     }
   },
   "options": {
     "step": {
       "init": {
-        "title": "Bewohnerszenen",
+        "title": "Resident Scenes",
+        "description": "Was möchten Sie ändern?",
+        "menu_options": {
+          "settings": "Einstellungen",
+          "template": "Vorlage einspielen"
+        }
+      },
+      "settings": {
+        "title": "Einstellungen",
         "data": {
-          "label": "Label für die Gerätefreigabe",
+          "label": "Label, das Geräte für Szenen freigibt",
+          "main_users": "Hauptnutzer (verwalten das Bearbeitungsrecht in der Karte)",
           "users_without_edit": "Konten ohne Bearbeitungsrecht",
-          "panel_users": "Panel-Konten (voreingestellt ohne Bearbeitungsrecht)",
+          "panel_users": "Panel-Konten (ohne Bearbeitungsrecht voreingestellt)",
           "panels_with_edit": "Panel-Konten mit Bearbeitungsrecht",
           "scenes_per_area": "Szenen je Raum",
           "house_scenes": "Haus-Szenen",
           "steps_per_scene": "Schritte je Szene",
+          "max_delay": "Längste Verzögerung eines Schritts (Sekunden)",
           "name_length": "Längster Name",
           "favorite_slots": "Favoritenplätze je Raum und fürs Haus",
-          "image_dir": "Ordner der Bildbibliothek (im Konfigurationsordner)"
+          "image_dir": "Ordner der Bildbibliothek (im Konfigurationsordner)",
+          "image_side": "Hochgeladene Bilder: längste Seite (Pixel)",
+          "image_kb": "Hochgeladene Bilder: größte Datei (kB)",
+          "image_count": "Hochgeladene Bilder: höchstens"
         },
         "data_description": {
-          "label": "Licht, Beschattung, Klima, Schalter, Lüfter, Musik und Szenen mit diesem Label (an der Entität oder ihrem Gerät) sind in Szenen verwendbar.",
+          "label": "Licht, Beschattung, Klima, Schalter, Lüfter, Mediaplayer und Szenen mit diesem Label (an der Entität oder ihrem Gerät) sind in Szenen verwendbar.",
           "image_dir": "Ein Bild mit der Kennung eines Raums als Namen ist das Standardbild dieses Raums."
+        }
+      },
+      "template": {
+        "title": "Vorlage einspielen",
+        "description": "Optionen und Errichterszenen aus einer JSON- oder YAML-Datei. Errichterszenen mit gleichem Schlüssel werden ersetzt. {error}",
+        "data": {
+          "template": "Datei (im Konfigurationsordner)"
         }
       }
     },
     "error": {
-      "outside_config": "Der Ordner muss im Konfigurationsordner liegen."
+      "outside_config": "Datei oder Ordner muss im Konfigurationsordner liegen.",
+      "invalid_template": "Die Vorlage ließ sich nicht einspielen.",
+      "not_loaded": "Resident Scenes ist nicht geladen."
+    }
+  },
+  "issues": {
+    "broken_steps": {
+      "title": "In der Szene {scene} fehlt etwas",
+      "description": "Diese Teile der Szene gibt es nicht mehr, beim Auslösen werden sie übersprungen: {items}. Ändern Sie die Szene in der Karte oder stellen Sie die Geräte wieder her."
+    }
+  },
+  "services": {
+    "capture": {
+      "name": "Ist-Zustand übernehmen",
+      "description": "Übernimmt den aktuellen Zustand der Geräte in die Szene, zum Beispiel bei langem Tastendruck."
+    }
+  },
+  "exceptions": {
+    "not_loaded": {
+      "message": "Resident Scenes ist nicht geladen."
+    },
+    "not_a_scene": {
+      "message": "{entity} ist keine Bewohnerszene."
+    },
+    "capture_failed": {
+      "message": "Der Zustand ließ sich nicht übernehmen: {error}"
     }
   }
 }

@@ -1,0 +1,14 @@
+{
+  "name": "resident-scenes-card",
+  "private": true,
+  "license": "Apache-2.0",
+  "scripts": {
+    "build": "esbuild src/resident-scenes-card.js --bundle --format=iife --target=es2021 --legal-comments=inline --banner:js=\"// Built from src/resident-scenes-card.js by npm run build, do not edit.\" --outfile=custom_components/resident_scenes/frontend/resident-scenes-card.js",
+    "test": "node tests/card.test.cjs"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2",
+    "jsdom": "31.0.1",
+    "lit": "3.3.3"
+  }
+}

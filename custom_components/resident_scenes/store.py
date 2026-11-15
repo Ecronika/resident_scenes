@@ -1,10 +1,12 @@
-"""Persistent scenes, favorite slots and the image library."""
+"""Persistent scenes, favorite slots, uploaded images and the image library."""
 
 from __future__ import annotations
 
 from datetime import timedelta
+import io
 import os
 from pathlib import Path
+import time
 from typing import Any
 from urllib.parse import quote
 from uuid import uuid4
@@ -20,7 +22,10 @@ from homeassistant.util import dt as dt_util
 from .const import (
     CONF_FAVORITE_SLOTS,
     CONF_HOUSE_SCENES,
+    CONF_IMAGE_COUNT,
     CONF_IMAGE_DIR,
+    CONF_IMAGE_KB,
+    CONF_IMAGE_SIDE,
     CONF_NAME_LENGTH,
     CONF_SCENES_PER_AREA,
     CONF_STEPS_PER_SCENE,
@@ -28,13 +33,21 @@ from .const import (
     HOUSE,
     IMAGE_SUFFIXES,
     IMAGE_URL,
+    KIND_INSTALLER,
+    KIND_RESIDENT,
+    MAX_TRANSITION,
+    PHOTO_URL,
     SIGNAL_CHANGED,
     STORAGE_KEY,
     STORAGE_VERSION,
+    UPLOAD_FOLDER,
+    UPLOAD_PREFIX,
 )
-from .model import ValidationError, build_steps, opt
+from .model import ValidationError, allowed_entities, build_steps, opt
 
 SIGN_EXPIRY = timedelta(days=1)
+UPLOAD_GRACE = 3600  # an upload not yet saved in a scene is kept this long (seconds)
+CONTENT = ("name", "area_id", "image", "steps", "transition")
 
 
 def valid_image_name(name: str) -> bool:
@@ -48,10 +61,21 @@ def valid_image_name(name: str) -> bool:
     )
 
 
+def valid_upload_id(upload_id: str) -> bool:
+    """Return whether an id is one the integration generates (hex name + .jpg)."""
+    stem, _, suffix = upload_id.partition(".")
+    return suffix == "jpg" and len(stem) == 32 and all(c in "0123456789abcdef" for c in stem)
+
+
 def image_dir(hass: HomeAssistant, entry: ConfigEntry) -> Path:
     """Return the folder of the installer's image library, always inside the config folder."""
     folder = str(opt(entry, CONF_IMAGE_DIR))
     return Path(hass.config.path(folder if inside_config(hass, folder) else "resident_scenes"))
+
+
+def upload_dir(hass: HomeAssistant) -> Path:
+    """Return the folder of uploaded scene images (in .storage, so in every backup)."""
+    return Path(hass.config.path(".storage", UPLOAD_FOLDER))
 
 
 def inside_config(hass: HomeAssistant, folder: str) -> bool:
@@ -59,6 +83,37 @@ def inside_config(hass: HomeAssistant, folder: str) -> bool:
     config = os.path.normpath(hass.config.path())
     return os.path.normpath(os.path.join(config, folder)).startswith(config + os.sep)
 
+
+def recode_image(data: bytes, max_side: int, max_kb: int) -> bytes:
+    """Check that data is an image and re-encode it as JPEG without metadata (location, time)."""
+    from PIL import Image, ImageOps, UnidentifiedImageError  # noqa: PLC0415
+
+    try:
+        with Image.open(io.BytesIO(data)) as img:
+            img.verify()
+        with Image.open(io.BytesIO(data)) as img:
+            image = ImageOps.exif_transpose(img).convert("RGB")
+    except (UnidentifiedImageError, OSError, ValueError, Image.DecompressionBombError) as err:
+        raise ValidationError("invalid_image_file") from err
+    image.thumbnail((max_side, max_side))
+    for quality in (85, 75, 65, 50, 35):
+        out = io.BytesIO()
+        image.save(out, "JPEG", quality=quality)  # saved without EXIF: no location, no time
+        if out.tell() <= max_kb * 1024:
+            return out.getvalue()
+    raise ValidationError("image_too_large", str(max_kb))
+
+
+class _VersionedStore(Store[dict[str, Any]]):
+    async def _async_migrate_func(
+        self, old_major_version: int, old_minor_version: int, old_data: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Version 1 (stage 1) to 2: protection, transition and the previous state."""
+        for scene in old_data.get("scenes", {}).values():
+            scene.setdefault("content_released", False)
+            scene.setdefault("transition", None)
+            scene.setdefault("previous", None)
+        return old_data
 
 
 class SceneStore:
@@ -68,11 +123,13 @@ class SceneStore:
         """Initialize the store."""
         self.hass = hass
         self.entry = entry
-        self._store: Store[dict[str, Any]] = Store(hass, STORAGE_VERSION, STORAGE_KEY)
+        self._store = _VersionedStore(hass, STORAGE_VERSION, STORAGE_KEY)
         self.scenes: dict[str, dict[str, Any]] = {}
         self.favorites: dict[str, list[str | None]] = {}
         self.images: list[str] = []
-        self._signed: dict[tuple[str, bool], tuple[str, float]] = {}
+        self._signed: dict[str, tuple[str, float]] = {}
+        self.runner: Any = None  # SceneRunner, set up after loading
+        self.previews: dict[str, dict[str, Any]] = {}  # live preview: states before editing
 
     async def async_load(self) -> None:
         """Load scenes and favorite slots and scan the image library."""
@@ -109,7 +166,7 @@ class SceneStore:
         changed = False
         for scene in self.scenes.values():
             for step in scene["steps"]:
-                if step["entity_id"] == old:
+                if step.get("entity_id") == old:
                     step["entity_id"] = data["entity_id"]
                     scene["version"] += 1  # open editors hold the old id
                     changed = True
@@ -121,18 +178,27 @@ class SceneStore:
         moved = [s for s in self.scenes.values() if s["area_id"] == area_id]
         self.favorites.pop(area_id, None)
         for scene in moved:
-            names = {s["name"].casefold() for s in self.scenes.values() if s["area_id"] is None}
-            base, n = scene["name"], 2
-            while scene["name"].casefold() in names:
-                suffix = f" ({n})"
-                scene["name"] = base[: int(opt(self.entry, CONF_NAME_LENGTH)) - len(suffix)] + suffix
-                n += 1
+            scene["name"] = self._free_name(scene["name"], None, scene["id"])
             scene["area_id"] = None
             scene["version"] += 1
             self.hass.bus.async_fire(
                 EVENT_CHANGED, {"scene_id": scene["id"], "name": scene["name"], "action": "moved to house"}
             )
         return bool(moved)
+
+    def _free_name(self, name: str, area_id: str | None, own_id: str) -> str:
+        """Return the name, with a suffix like ' (2)' if another scene of the area has it."""
+        names = {
+            s["name"].casefold() for s in self.scenes.values() if s["area_id"] == area_id and s["id"] != own_id
+        }
+        base, result, n = name, name, 2
+        while result.casefold() in names:
+            suffix = f" ({n})"
+            result = base[: int(opt(self.entry, CONF_NAME_LENGTH)) - len(suffix)] + suffix
+            n += 1
+        return result
+
+    # ---------- images ----------
 
     async def async_scan_images(self) -> None:
         """Read the image library folder."""
@@ -145,26 +211,77 @@ class SceneStore:
 
         self.images = await self.hass.async_add_executor_job(scan)
 
-    def image_url(self, scene: dict[str, Any], *, content_user: bool = False) -> str | None:
+    def image_url(self, scene: dict[str, Any]) -> str | None:
         """Return a signed URL for the scene image or the default image of its area."""
         name = scene.get("image")
         if name is None and scene.get("area_id"):
             name = next((i for i in self.images if Path(i).stem == scene["area_id"]), None)
-        if name is None:
-            return None
-        return self.sign(name, content_user=content_user)
+        return None if name is None else self.sign(name)
 
-    def sign(self, name: str, *, content_user: bool = False) -> str:
-        """Sign the URL of a library image; reused for half its lifetime so browsers can cache it."""
+    def sign(self, name: str) -> str:
+        """Sign the URL of an image, reused for half its lifetime so browsers can cache it.
+
+        Signed with the content user, so the URL does not depend on the login of the
+        account that asked first (it stays valid when that account logs out).
+        """
         now = dt_util.utcnow().timestamp()
-        key = (name, content_user)
-        if (cached := self._signed.get(key)) and cached[1] > now:
+        if (cached := self._signed.get(name)) and cached[1] > now:
             return cached[0]
-        url = async_sign_path(
-            self.hass, f"{IMAGE_URL}/{quote(name)}", SIGN_EXPIRY, use_content_user=content_user
-        )
-        self._signed[key] = (url, now + SIGN_EXPIRY.total_seconds() / 2)
+        if name.startswith(UPLOAD_PREFIX):
+            path = f"{PHOTO_URL}/{name.removeprefix(UPLOAD_PREFIX)}"
+        else:
+            path = f"{IMAGE_URL}/{quote(name)}"
+        url = async_sign_path(self.hass, path, SIGN_EXPIRY, use_content_user=True)
+        self._signed[name] = (url, now + SIGN_EXPIRY.total_seconds() / 2)
         return url
+
+    async def async_add_upload(self, data: bytes) -> str:
+        """Check, shrink and re-encode an uploaded image; return its image name."""
+        if len(self._uploads_in_use()) >= int(opt(self.entry, CONF_IMAGE_COUNT)):
+            raise ValidationError("image_limit", str(opt(self.entry, CONF_IMAGE_COUNT)))
+        folder = upload_dir(self.hass)
+        upload_id = f"{uuid4().hex}.jpg"
+        max_side, max_kb = int(opt(self.entry, CONF_IMAGE_SIDE)), int(opt(self.entry, CONF_IMAGE_KB))
+
+        def write() -> None:
+            jpeg = recode_image(data, max_side, max_kb)
+            folder.mkdir(parents=True, exist_ok=True)
+            (folder / upload_id).write_bytes(jpeg)
+
+        await self.hass.async_add_executor_job(write)
+        return UPLOAD_PREFIX + upload_id
+
+    def _uploads_in_use(self) -> set[str]:
+        """Uploaded images still needed by a scene or by its previous state (for undo)."""
+        names = set()
+        for scene in self.scenes.values():
+            for content in (scene, scene.get("previous") or {}):
+                if (image := content.get("image")) and image.startswith(UPLOAD_PREFIX):
+                    names.add(image.removeprefix(UPLOAD_PREFIX))
+        return names
+
+    async def _async_clean_uploads(self) -> None:
+        keep = self._uploads_in_use()
+        folder = upload_dir(self.hass)
+
+        def clean() -> None:
+            if not folder.is_dir():
+                return
+            for path in folder.iterdir():
+                # fresh uploads are kept a while: the card uploads first and saves the scene after
+                if path.name not in keep and path.stat().st_mtime < time.time() - UPLOAD_GRACE:
+                    path.unlink(missing_ok=True)
+
+        await self.hass.async_add_executor_job(clean)
+
+    async def _async_image_exists(self, image: str) -> bool:
+        if not image.startswith(UPLOAD_PREFIX):
+            return image in self.images
+        upload_id = image.removeprefix(UPLOAD_PREFIX)
+        path = upload_dir(self.hass) / upload_id
+        return valid_upload_id(upload_id) and await self.hass.async_add_executor_job(path.is_file)
+
+    # ---------- scenes ----------
 
     def slots(self, scope: str) -> list[str | None]:
         """Return the favorite slots of a scope, padded to the configured count."""
@@ -172,7 +289,23 @@ class SceneStore:
         current = self.favorites.get(scope, [])[:count]
         return current + [None] * (count - len(current))
 
-    async def async_save_scene(self, payload: dict[str, Any], user_id: str) -> dict[str, Any]:
+    def editable(self, scene: dict[str, Any], is_admin: bool) -> bool:
+        """Return whether an editor may change the steps of a scene."""
+        return is_admin or scene["kind"] != KIND_INSTALLER or scene["content_released"]
+
+    def used_in(self, scene_id: str) -> dict[str, list[str]]:
+        """Return the house scenes calling a scene and the favorite slots it is on."""
+        callers = [
+            s["name"] for s in self.scenes.values() if any(st.get("scene_id") == scene_id for st in s["steps"])
+        ]
+        slots = [
+            f"{scope}:{i + 1}" for scope, ids in self.favorites.items() for i, s in enumerate(ids) if s == scene_id
+        ]
+        return {"scenes": callers, "slots": slots}
+
+    async def async_save_scene(
+        self, payload: dict[str, Any], user_id: str | None, is_admin: bool = False, new_id: str | None = None
+    ) -> dict[str, Any]:
         """Validate and store a new or changed scene."""
         scene_id: str | None = payload.get("scene_id")
         existing = self.scenes.get(scene_id) if scene_id else None
@@ -183,6 +316,20 @@ class SceneStore:
 
         name = payload["name"].strip()
         area_id: str | None = payload.get("area_id")
+        image = payload.get("image")
+        kind = existing["kind"] if existing else KIND_RESIDENT
+        released = existing["content_released"] if existing else False
+        if is_admin:
+            kind = payload.get("kind", kind)
+            released = payload.get("content_released", released)
+        elif existing and kind == KIND_INSTALLER:
+            # residents change only the content of a released installer scene (spec 2)
+            if not released:
+                raise ValidationError("protected")
+            if (name, area_id, image) != (existing["name"], existing["area_id"], existing["image"]):
+                raise ValidationError("protected")
+        elif payload.get("kind", KIND_RESIDENT) != KIND_RESIDENT or "content_released" in payload:
+            raise ValidationError("unauthorized")
         if not name or len(name) > int(opt(self.entry, CONF_NAME_LENGTH)):
             raise ValidationError("invalid_name")
         if area_id and ar.async_get(self.hass).async_get_area(area_id) is None:
@@ -191,29 +338,34 @@ class SceneStore:
         if any(s["name"].casefold() == name.casefold() for s in others):
             raise ValidationError("name_exists")
         limit = int(opt(self.entry, CONF_SCENES_PER_AREA if area_id else CONF_HOUSE_SCENES))
-        if len(others) >= limit:
+        if len(others) >= limit and not (existing and existing["area_id"] == area_id):
             raise ValidationError("limit_reached")
         if len(payload["steps"]) > int(opt(self.entry, CONF_STEPS_PER_SCENE)):
             raise ValidationError("too_many_steps")
-        image = payload.get("image")
-        if image is not None and image not in self.images:
+        if image is not None and image != (existing or {}).get("image") and not await self._async_image_exists(image):
             raise ValidationError("invalid_image")
+        transition = payload.get("transition")
+        if transition is not None and not 0 <= transition <= MAX_TRANSITION:
+            raise ValidationError("invalid_value", "transition")
         base_id = payload.get("copy_from") or scene_id
         if base_id and base_id not in self.scenes:
             raise ValidationError("not_found")
         base_steps = self.scenes[base_id]["steps"] if base_id else []
-        steps = build_steps(self.hass, self.entry, payload["steps"], base_steps, area_id)
+        steps = build_steps(self.hass, self.entry, payload["steps"], base_steps, area_id, self.scenes, scene_id)
 
         scene = {
-            "id": scene_id or uuid4().hex,
+            "id": scene_id or new_id or uuid4().hex,
             "name": name,
             "area_id": area_id,
             "image": image,
-            "kind": existing["kind"] if existing else "resident",
+            "kind": kind,
+            "content_released": bool(released) and kind == KIND_INSTALLER,
+            "transition": transition,
             "steps": steps,
             "version": existing["version"] + 1 if existing else 1,
             "changed_by": user_id,
             "changed_at": dt_util.utcnow().isoformat(),
+            "previous": {k: existing[k] for k in CONTENT} if existing else None,
         }
         if existing and existing["area_id"] != area_id:
             self._clear_favorites(scene["id"])
@@ -221,13 +373,85 @@ class SceneStore:
         await self._async_commit()
         return scene
 
-    async def async_delete_scene(self, scene_id: str) -> dict[str, Any]:
-        """Delete a scene and empty its favorite slots."""
-        if (scene := self.scenes.pop(scene_id, None)) is None:
+    async def async_undo(self, scene_id: str, version: int, user_id: str | None, is_admin: bool) -> dict[str, Any]:
+        """Bring back the state before the last change (including its image)."""
+        scene = self.scenes.get(scene_id)
+        if scene is None:
             raise ValidationError("not_found")
+        if scene["version"] != version:
+            raise ValidationError("version_conflict")
+        if not scene["previous"]:
+            raise ValidationError("nothing_to_undo")
+        if not self.editable(scene, is_admin):
+            raise ValidationError("protected")
+        previous = scene["previous"]
+        if previous["area_id"] and ar.async_get(self.hass).async_get_area(previous["area_id"]) is None:
+            previous["area_id"] = None
+        if previous["area_id"] != scene["area_id"]:
+            self._clear_favorites(scene_id)
+        previous["name"] = self._free_name(previous["name"], previous["area_id"], scene_id)
+        scene.update(previous)
+        scene.update(
+            version=scene["version"] + 1, previous=None, changed_by=user_id, changed_at=dt_util.utcnow().isoformat()
+        )
+        await self._async_commit()
+        return scene
+
+    async def async_capture(self, scene_id: str, user_id: str | None) -> dict[str, Any]:
+        """Take over the current state of every device of a scene (action resident_scenes.capture)."""
+        scene = self.scenes[scene_id]
+        allowed = allowed_entities(self.hass, self.entry)
+        raw = []
+        for step in scene["steps"]:
+            entry = {"delay": step.get("delay", 0)}
+            if "scene_id" in step:
+                raw.append({**entry, "mode": "scene", "scene_id": step["scene_id"]})
+                continue
+            state = self.hass.states.get(step["entity_id"])
+            reachable = step["entity_id"] in allowed and state is not None and state.state != "unavailable"
+            # unreachable or no longer released: keep the stored value
+            raw.append({**entry, "entity_id": step["entity_id"], "mode": "capture" if reachable else "keep"})
+        payload = {k: scene[k] for k in CONTENT if scene[k] is not None or k != "transition"}
+        payload |= {"scene_id": scene_id, "version": scene["version"], "steps": raw}
+        return await self.async_save_scene(payload, user_id, is_admin=True)
+
+    async def async_delete_scene(self, scene_id: str, is_admin: bool = False) -> dict[str, Any]:
+        """Delete a scene and empty its favorite slots; callers keep a 'scene missing' step."""
+        scene = self.scenes.get(scene_id)
+        if scene is None:
+            raise ValidationError("not_found")
+        if scene["kind"] == KIND_INSTALLER and not is_admin:
+            raise ValidationError("protected")
+        del self.scenes[scene_id]
         self._clear_favorites(scene_id)
         await self._async_commit()
         return scene
+
+    async def async_import(self, template: dict[str, Any]) -> int:
+        """Load installer scenes from a template (spec 4.1); returns the number of scenes.
+
+        Scenes carry a ``key``; a scene of an earlier template with the same key is replaced.
+        """
+        count = 0
+        for item in template.get("scenes", []):
+            scene_id = f"tpl_{item['key']}"
+            existing = self.scenes.get(scene_id)
+            payload = {
+                "name": item["name"],
+                "area_id": item.get("area_id"),
+                "image": item.get("image"),
+                "kind": KIND_INSTALLER,
+                "content_released": bool(item.get("content_released", False)),
+                "steps": item.get("steps", []),
+            }
+            if item.get("transition") is not None:
+                payload["transition"] = item["transition"]
+            if existing:
+                payload |= {"scene_id": scene_id, "version": existing["version"]}
+            # the template key gives a stable id, so a later template replaces this scene
+            await self.async_save_scene(payload, None, is_admin=True, new_id=scene_id)
+            count += 1
+        return count
 
     async def async_set_favorite(self, scope: str, slot: int, scene_id: str | None) -> None:
         """Put a scene on a favorite slot (or empty it); a scene uses one slot per scope."""
@@ -254,4 +478,6 @@ class SceneStore:
 
     async def _async_commit(self) -> None:
         await self._store.async_save({"scenes": self.scenes, "favorites": self.favorites})
+        await self._async_clean_uploads()
         async_dispatcher_send(self.hass, SIGNAL_CHANGED)
+

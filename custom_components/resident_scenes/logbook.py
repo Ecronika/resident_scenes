@@ -12,7 +12,7 @@ from homeassistant.components.logbook import (
 )
 from homeassistant.core import Event, HomeAssistant, callback
 
-from .const import DOMAIN, EVENT_CHANGED, EVENT_SKIPPED
+from .const import DOMAIN, EVENT_CHANGED, EVENT_RIGHTS, EVENT_SKIPPED
 
 
 @callback
@@ -42,5 +42,11 @@ def async_describe_events(
             parts.append("failed " + names(event.data["failed"]))
         return {LOGBOOK_ENTRY_NAME: event.data["name"], LOGBOOK_ENTRY_MESSAGE: "; ".join(parts)}
 
+    @callback
+    def describe_rights(event: Event) -> dict[str, Any]:
+        right = "may now edit scenes" if event.data["can_edit"] else "may no longer edit scenes"
+        return {LOGBOOK_ENTRY_NAME: event.data["user"], LOGBOOK_ENTRY_MESSAGE: right}
+
+    async_describe_event(DOMAIN, EVENT_RIGHTS, describe_rights)
     async_describe_event(DOMAIN, EVENT_CHANGED, describe_changed)
     async_describe_event(DOMAIN, EVENT_SKIPPED, describe_skipped)

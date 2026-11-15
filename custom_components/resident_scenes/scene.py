@@ -14,7 +14,6 @@ from homeassistant.helpers.event import async_track_time_interval
 
 from . import ResidentScenesConfigEntry
 from .const import DOMAIN, SIGNAL_CHANGED
-from .model import async_activate
 from .store import SceneStore
 
 PARALLEL_UPDATES = 0
@@ -76,13 +75,14 @@ class ResidentScene(Scene):
     @property
     def entity_picture(self) -> str | None:
         """Return a fresh signed URL of the scene image."""
-        return self._store.image_url(self._scene, content_user=True)
+        return self._store.image_url(self._scene)
 
     def _update_attrs(self) -> None:
         scene = self._scene
         self._attr_name = scene["name"]
         self._attr_extra_state_attributes = {
             "kind": scene["kind"],
+            "content_released": scene["content_released"],
             "area_id": scene["area_id"],
             "step_count": len(scene["steps"]),
             "changed_at": scene["changed_at"],
@@ -117,4 +117,4 @@ class ResidentScene(Scene):
 
     async def async_activate(self, **kwargs: Any) -> None:
         """Run the scene."""
-        await async_activate(self.hass, self._store.entry, self._scene, self._context)
+        await self._store.runner.async_run(self._attr_unique_id, self._context)

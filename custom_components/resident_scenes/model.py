@@ -1,32 +1,28 @@
-"""Permissions, device release, step building and activation."""
+"""Permissions, device release and step building."""
 
 from __future__ import annotations
 
-import asyncio
-from functools import partial
-import logging
 from typing import Any
 
 from homeassistant.auth.models import User
 from homeassistant.auth.permissions.const import POLICY_CONTROL
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import ATTR_ENTITY_ID, STATE_UNAVAILABLE, STATE_UNKNOWN
-from homeassistant.core import Context, HomeAssistant, State
+from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
+from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr, entity_registry as er
-from homeassistant.helpers.state import async_reproduce_state
 
 from .const import (
     ALLOWED_DOMAINS,
     CONF_LABEL,
+    CONF_MAIN_USERS,
+    CONF_MAX_DELAY,
     CONF_PANEL_USERS,
     CONF_PANELS_WITH_EDIT,
     CONF_USERS_WITHOUT_EDIT,
     DEFAULTS,
     DOMAIN,
-    EVENT_SKIPPED,
+    MUSIC_PLATFORMS,
 )
-
-_LOGGER = logging.getLogger(__name__)
 
 LIGHT_COLOR_ATTR = {
     "color_temp": "color_temp_kelvin",
@@ -65,15 +61,28 @@ def opt(entry: ConfigEntry, key: str) -> Any:
     return entry.options.get(key, DEFAULTS[key])
 
 
+def can_control(user: User) -> bool:
+    """Return whether the account is an active person that may control devices."""
+    return (
+        user.is_active
+        and not user.system_generated
+        and user.permissions.access_all_entities(POLICY_CONTROL)
+    )
+
+
+def is_main_user(entry: ConfigEntry, user: User) -> bool:
+    """Return whether the account manages edit rights (admins and main users)."""
+    return user.is_admin or (can_control(user) and user.id in opt(entry, CONF_MAIN_USERS))
+
+
 def can_edit(entry: ConfigEntry, user: User) -> bool:
     """Return whether the user may change scenes (default: yes, panels: no)."""
     if user.is_admin:
         return True
-    if user.system_generated or not user.is_active:
+    if not can_control(user):  # read-only accounts may neither change nor run scenes
         return False
-    # editing needs the right to run scenes (e.g. not for read-only accounts)
-    if not user.permissions.access_all_entities(POLICY_CONTROL):
-        return False
+    if user.id in opt(entry, CONF_MAIN_USERS):
+        return True
     if user.id in opt(entry, CONF_PANEL_USERS):
         return user.id in opt(entry, CONF_PANELS_WITH_EDIT)
     return user.id not in opt(entry, CONF_USERS_WITHOUT_EDIT)
@@ -110,15 +119,26 @@ def entity_area(hass: HomeAssistant, ent: er.RegistryEntry) -> str | None:
 
 
 def music_favorites(hass: HomeAssistant) -> dict[str, str]:
-    """Return Sonos favorites (id -> name) from the Sonos favorites sensor."""
+    """Return music favorites (id -> name) from the favorites sensor of the music system."""
     favorites: dict[str, str] = {}
     for ent in er.async_get(hass).entities.values():
-        if ent.platform != "sonos" or ent.domain != "sensor":
+        if ent.platform not in MUSIC_PLATFORMS or ent.domain != "sensor":
             continue
         state = hass.states.get(ent.entity_id)
         if state and isinstance(items := state.attributes.get("items"), dict):
             favorites.update({str(k): str(v) for k, v in items.items()})
     return favorites
+
+
+def is_music_player(hass: HomeAssistant, entity_id: str) -> bool:
+    """Return whether a media player belongs to the music system (favorites allowed)."""
+    ent = er.async_get(hass).async_get(entity_id)
+    return ent is not None and ent.domain == "media_player" and ent.platform in MUSIC_PLATFORMS
+
+
+def step_key(step: dict[str, Any]) -> str:
+    """Return what a step acts on: an entity id or a called scene."""
+    return step.get("entity_id") or f"scene:{step['scene_id']}"
 
 
 def _capture(
@@ -139,14 +159,11 @@ def _capture(
         # shortcut: matches the current title by name only, upgrade if a music system exposes the favorite id
         names = {state.attributes.get(a) for a in ("media_title", "media_channel", "media_playlist")}
         fav = next((fid for fid, name in favorites.items() if name in names), None)
-        if fav is None:
+        if fav is None or not is_music_player(hass, entity_id):
             return {"entity_id": entity_id, "music": "on", "volume": volume}
         return {
-            "entity_id": entity_id,
-            "music": "favorite",
-            "volume": volume,
-            "favorite_id": fav,
-            "favorite_name": favorites[fav],
+            "entity_id": entity_id, "music": "favorite", "volume": volume,
+            "favorite_id": fav, "favorite_name": favorites[fav],
         }
     attrs: dict[str, Any] = {}
     if state.domain == "light":
@@ -165,58 +182,147 @@ def _capture(
     return {"entity_id": entity_id, "state": state.state, "attributes": attrs}
 
 
+def _number(values: dict[str, Any], key: str, low: float, high: float) -> float | None:
+    """Return a value within range, None if not given; reject anything else."""
+    if key not in values:
+        return None
+    value = values[key]
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not low <= value <= high:
+        raise ValidationError("invalid_value", key)
+    return value
+
+
+def _set_step(hass: HomeAssistant, entity_id: str, values: dict[str, Any]) -> dict[str, Any]:
+    """Build a step from values set directly in the editor, checked against the device."""
+    domain = entity_id.split(".", 1)[0]
+    current = hass.states.get(entity_id)
+    attrs = current.attributes if current else {}
+    if domain == "light":
+        brightness = _number(values, "brightness", 1, 255)
+        kelvin = _number(
+            values,
+            "color_temp_kelvin",
+            attrs.get("min_color_temp_kelvin", 1000),
+            attrs.get("max_color_temp_kelvin", 12000),
+        )
+        hue = _number(values, "hue", 0, 360)
+        saturation = _number(values, "saturation", 0, 100)
+        result: dict[str, Any] = {"brightness": int(brightness or 255)}
+        if kelvin is not None:
+            result |= {"color_mode": "color_temp", "color_temp_kelvin": int(kelvin)}
+        elif hue is not None:
+            result |= {"color_mode": "hs", "hs_color": [hue, 100 if saturation is None else saturation]}
+        return {"entity_id": entity_id, "state": "on", "attributes": result}
+    if domain == "cover":
+        position = _number(values, "position", 0, 100)
+        tilt = _number(values, "tilt", 0, 100)
+        if position is None and tilt is None:
+            raise ValidationError("invalid_value", entity_id)
+        result = {}
+        if position is not None:
+            result["current_position"] = int(position)
+        if tilt is not None:
+            result["current_tilt_position"] = int(tilt)
+        state = "closed" if position == 0 else "open"
+        return {"entity_id": entity_id, "state": state, "attributes": result}
+    if domain == "climate":
+        mode = values.get("hvac_mode", current.state if current else None)
+        if mode not in attrs.get("hvac_modes", []):
+            raise ValidationError("invalid_value", "hvac_mode")
+        temperature = _number(values, "temperature", attrs.get("min_temp", 5), attrs.get("max_temp", 35))
+        result = {} if temperature is None else {"temperature": temperature}
+        return {"entity_id": entity_id, "state": mode, "attributes": result}
+    if domain == "fan":
+        percentage = _number(values, "percentage", 0, 100)
+        if percentage is None:
+            raise ValidationError("invalid_value", entity_id)
+        state = "on" if percentage else "off"
+        return {"entity_id": entity_id, "state": state, "attributes": {"percentage": int(percentage)}}
+    if domain == "switch" and isinstance(values.get("on"), bool):
+        return {"entity_id": entity_id, "state": "on" if values["on"] else "off", "attributes": {}}
+    raise ValidationError("invalid_step", entity_id)
+
+
+def build_step(
+    hass: HomeAssistant,
+    raw: dict[str, Any],
+    allowed: dict[str, er.RegistryEntry],
+    favorites: dict[str, str],
+    area_id: str | None,
+) -> dict[str, Any]:
+    """Resolve one requested device step (modes capture, off, set, music)."""
+    entity_id = raw["entity_id"]
+    domain = entity_id.split(".", 1)[0]
+    mode = raw["mode"]
+    if entity_id not in allowed or (area_id and entity_area(hass, allowed[entity_id]) != area_id):
+        raise ValidationError("entity_not_allowed", entity_id)
+    if mode == "capture":
+        if (step := _capture(hass, entity_id, favorites)) is None:
+            raise ValidationError("entity_unavailable", entity_id)
+        return step
+    if mode == "off" and domain == "media_player":
+        return {"entity_id": entity_id, "music": "off"}
+    if mode == "off" and domain in OFF_STATE:
+        return {"entity_id": entity_id, "state": OFF_STATE[domain], "attributes": {}}
+    if mode == "set" and domain in OFF_STATE:
+        return _set_step(hass, entity_id, raw.get("values") or {})
+    if mode == "music" and domain == "media_player" and (step := _music_step(hass, entity_id, raw, favorites)):
+        return step
+    raise ValidationError("invalid_step", entity_id)
+
+
 def build_steps(
     hass: HomeAssistant,
     entry: ConfigEntry,
     raw_steps: list[dict[str, Any]],
     base_steps: list[dict[str, Any]],
     area_id: str | None = None,
+    scenes: dict[str, dict[str, Any]] | None = None,
+    own_id: str | None = None,
 ) -> list[dict[str, Any]]:
     """Validate the requested steps and resolve them into stored steps.
 
-    Modes: capture (current state), off (without switching), keep (stored
-    value of the base scene) and music (media players only). ``keep`` also works
-    for devices no longer released or moved, so the scene stays editable (spec 4.11).
+    ``keep`` keeps the stored value of the base scene, also for devices no longer
+    released or moved, so the scene stays editable (spec 4.5). ``scene`` calls a
+    room scene from a house scene. Every step may carry a delay.
     """
     allowed = allowed_entities(hass, entry)
     favorites = music_favorites(hass)
-    base = {step["entity_id"]: step for step in base_steps}
+    max_delay = int(opt(entry, CONF_MAX_DELAY))
+    base = {step_key(step): step for step in base_steps}
     seen: set[str] = set()
     steps: list[dict[str, Any]] = []
     for raw in raw_steps:
-        entity_id = raw["entity_id"]
-        if entity_id in seen:
-            raise ValidationError("duplicate_entity", entity_id)
-        seen.add(entity_id)
-        domain = entity_id.split(".", 1)[0]
         mode = raw["mode"]
-        step: dict[str, Any] | None
-        if mode == "keep":
-            step = base.get(entity_id)
-        elif entity_id not in allowed or (
-            area_id and entity_area(hass, allowed[entity_id]) != area_id
-        ):
-            raise ValidationError("entity_not_allowed", entity_id)
-        elif mode == "capture":
-            step = _capture(hass, entity_id, favorites) or base.get(entity_id)
-            if step is None:
-                raise ValidationError("entity_unavailable", entity_id)
-        elif mode == "off" and domain == "media_player":
-            step = {"entity_id": entity_id, "music": "off"}
-        elif mode == "off" and domain in OFF_STATE:
-            step = {"entity_id": entity_id, "state": OFF_STATE[domain], "attributes": {}}
-        elif mode == "music" and domain == "media_player":
-            step = _music_step(entity_id, raw, favorites)
+        if mode == "scene":
+            target = (scenes or {}).get(raw.get("scene_id", ""))
+            # only house scenes call scenes, only room scenes are called: no cycles possible
+            if area_id or target is None or target["area_id"] is None or target["id"] == own_id:
+                raise ValidationError("invalid_scene_call", str(raw.get("scene_id")))
+            step: dict[str, Any] = {"scene_id": target["id"], "name": target["name"]}
+        elif "entity_id" not in raw:
+            raise ValidationError("invalid_step")
+        elif mode == "keep":
+            if (kept := base.get(raw["entity_id"])) is None:
+                raise ValidationError("invalid_step", raw["entity_id"])
+            step = {k: v for k, v in kept.items() if k != "delay"}
         else:
-            step = None
-        if step is None:
-            raise ValidationError("invalid_step", entity_id)
+            step = build_step(hass, raw, allowed, favorites, area_id)
+        key = step_key(step)
+        if key in seen:
+            raise ValidationError("duplicate_entity", key)
+        seen.add(key)
+        delay = raw.get("delay", 0)
+        if not 0 <= delay <= max_delay:
+            raise ValidationError("invalid_delay", key)
+        if delay:
+            step["delay"] = delay
         steps.append(step)
     return steps
 
 
 def _music_step(
-    entity_id: str, raw: dict[str, Any], favorites: dict[str, str]
+    hass: HomeAssistant, entity_id: str, raw: dict[str, Any], favorites: dict[str, str]
 ) -> dict[str, Any] | None:
     music = raw.get("music")
     if music == "off":
@@ -226,78 +332,12 @@ def _music_step(
     if music == "on":
         return {"entity_id": entity_id, "music": "on", "volume": raw["volume"]}
     if music == "favorite":
-        fav = raw.get("favorite_id")
-        if fav not in favorites:
+        if not is_music_player(hass, entity_id):
+            raise ValidationError("favorite_not_supported", entity_id)
+        if (fav := raw.get("favorite_id")) not in favorites:
             raise ValidationError("unknown_favorite", entity_id)
         return {
-            "entity_id": entity_id,
-            "music": "favorite",
-            "volume": raw["volume"],
-            "favorite_id": fav,
-            "favorite_name": favorites[fav],
+            "entity_id": entity_id, "music": "favorite", "volume": raw["volume"],
+            "favorite_id": fav, "favorite_name": favorites[fav],
         }
     return None
-
-
-async def _play_music(
-    hass: HomeAssistant, step: dict[str, Any], context: Context | None
-) -> None:
-    entity_id = step["entity_id"]
-    call = partial(hass.services.async_call, "media_player", blocking=True, context=context)
-    if step["music"] == "off":
-        await call("media_stop", {ATTR_ENTITY_ID: entity_id})
-        return
-    # volume first, then playback (spec 4.6)
-    await call("volume_set", {ATTR_ENTITY_ID: entity_id, "volume_level": step["volume"]})
-    if step["music"] == "on":
-        await call("media_play", {ATTR_ENTITY_ID: entity_id})
-    else:
-        await call(
-            "play_media",
-            {
-                ATTR_ENTITY_ID: entity_id,
-                "media_content_id": step["favorite_id"],
-                "media_content_type": "favorite_item_id",
-            },
-        )
-
-
-async def async_activate(
-    hass: HomeAssistant, entry: ConfigEntry, scene: dict[str, Any], context: Context | None
-) -> None:
-    """Apply all steps of a scene together, skipping unreachable or unreleased devices.
-
-    shortcut: steps run in parallel without the script helper, switch to it with delays in stage 2.
-    """
-    favorites = music_favorites(hass)
-    allowed = allowed_entities(hass, entry)
-    jobs: list[tuple[str, Any]] = []
-    skipped: list[str] = []
-    for step in scene["steps"]:
-        entity_id = step["entity_id"]
-        current = hass.states.get(entity_id)
-        if entity_id not in allowed or current is None or current.state == STATE_UNAVAILABLE:
-            skipped.append(entity_id)
-        elif step.get("call"):
-            jobs.append((entity_id, hass.services.async_call(
-                "scene", "turn_on", {ATTR_ENTITY_ID: entity_id}, blocking=True, context=context
-            )))
-        elif "music" in step:
-            if step["music"] == "favorite" and step["favorite_id"] not in favorites:
-                skipped.append(entity_id)
-            else:
-                jobs.append((entity_id, _play_music(hass, step, context)))
-        else:
-            state = State(entity_id, step["state"], step["attributes"])
-            jobs.append((entity_id, async_reproduce_state(hass, [state], context=context)))
-    results = await asyncio.gather(*(job for _, job in jobs), return_exceptions=True)
-    failed = [eid for (eid, _), res in zip(jobs, results, strict=True) if isinstance(res, Exception)]
-    for (eid, _), res in zip(jobs, results, strict=True):
-        if isinstance(res, Exception):
-            _LOGGER.warning("Scene %s: %s failed: %s", scene["name"], eid, res)
-    if skipped or failed:
-        hass.bus.async_fire(
-            EVENT_SKIPPED,
-            {"scene_id": scene["id"], "name": scene["name"], "entities": skipped, "failed": failed},
-            context=context,
-        )
