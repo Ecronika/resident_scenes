@@ -1,6 +1,6 @@
 // Resident Scenes card. No build step, no Home Assistant internal elements: only the
 // documented card API and theme variables, so frontend updates cannot break it.
-const VERSION = "0.1.1"; // must match the integration (checked by tests)
+const VERSION = "0.1.2"; // must match the integration (checked by tests)
 const WS = "resident_scenes";
 const HOUSE = "_house";
 const DOMAINS = ["light", "cover", "climate", "switch", "fan", "media_player", "scene"];

@@ -22,12 +22,17 @@ jobs:
 
   tests:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # current Home Assistant and the minimum version in hacs.json (0.13.317 = Home Assistant 2026.3.1)
+        plugin: ["pytest-homeassistant-custom-component", "pytest-homeassistant-custom-component==0.13.317"]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.14"
-      - run: pip install pytest-homeassistant-custom-component ruff
+      - run: pip install "${{ matrix.plugin }}" ruff
       - run: ruff check custom_components tests
       - run: node --check custom_components/resident_scenes/frontend/resident-scenes-card.js
       - run: npm i --no-save jsdom && node tests/card.test.cjs

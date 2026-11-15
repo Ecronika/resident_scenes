@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.2
+
+- Minimum Home Assistant version lowered to 2026.3 (first version reading the `brand/` icons). The tests also run
+  against Home Assistant 2026.3.1.
+
 ## 0.1.1
 
 - Scenes of a deleted area become house scenes (name gets a suffix if taken); the area's favorite slots go.
