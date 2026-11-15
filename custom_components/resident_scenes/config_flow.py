@@ -141,6 +141,8 @@ class ResidentScenesOptionsFlow(OptionsFlow):
                 try:
                     template = await self.hass.async_add_executor_job(_read_template, self.hass.config.path(name))
                     options = {**self.config_entry.options, **template.get("options", {})}
+                    if not inside_config(self.hass, str(options.get(CONF_IMAGE_DIR, DEFAULTS[CONF_IMAGE_DIR]))):
+                        raise ValueError("image_dir outside the config folder")
                     count = await self.config_entry.runtime_data.async_import(template)
                 except (OSError, ValueError, KeyError, TypeError, ValidationError) as err:
                     errors["base"] = "invalid_template"
@@ -163,6 +165,14 @@ def _read_template(path: str) -> dict[str, Any]:
         data = load_yaml_dict(path)
     if not isinstance(data, dict):
         raise ValueError("template must be a mapping")
-    if set(data.get("options", {})) - set(DEFAULTS):
-        raise ValueError("unknown option in template")
+    for key, value in data.get("options", {}).items():
+        # the same values the settings form allows; a wrong one would break every card
+        if key in LIMITS:
+            valid = type(value) is int and 1 <= value <= LIMITS[key]
+        elif key in RIGHTS:
+            valid = isinstance(value, list) and all(isinstance(u, str) for u in value)
+        else:
+            valid = key in DEFAULTS and isinstance(value, str) and bool(value)
+        if not valid:
+            raise ValueError(f"invalid option {key}")
     return data

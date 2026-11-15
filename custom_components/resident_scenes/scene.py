@@ -64,18 +64,18 @@ class ResidentScene(Scene):
 
     def __init__(self, store: SceneStore, scene_id: str) -> None:
         """Initialize the entity."""
-        self._store = store
+        self.store = store  # read by the capture action
         self._attr_unique_id = scene_id
         self._update_attrs()
 
     @property
     def _scene(self) -> dict[str, Any]:
-        return self._store.scenes[self._attr_unique_id]  # type: ignore[index]
+        return self.store.scenes[self._attr_unique_id]  # type: ignore[index]
 
     @property
     def entity_picture(self) -> str | None:
         """Return a fresh signed URL of the scene image."""
-        return self._store.image_url(self._scene)
+        return self.store.image_url(self._scene)
 
     def _update_attrs(self) -> None:
         scene = self._scene
@@ -117,4 +117,4 @@ class ResidentScene(Scene):
 
     async def async_activate(self, **kwargs: Any) -> None:
         """Run the scene."""
-        await self._store.runner.async_run(self._attr_unique_id, self._context)
+        await self.store.runner.async_run(self._attr_unique_id, self._context)

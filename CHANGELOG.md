@@ -1,5 +1,32 @@
 # Changelog
 
+## 0.2.1
+
+Fixes from the review of 0.2.0 (S1 to S14).
+
+- `capture` keeps the stored value of devices that are missing, unreachable, no longer released or moved to another
+  room, and keeps called room scenes. Before, one such device made the whole action fail (S1).
+- A house scene whose called scene lost its room (room deleted) can be saved again. The call is marked "No room scene
+  any more" and can be removed. Error messages name the scene, not its id (S2).
+- Live preview: the state before editing is kept per editor, not per account. Leaving the editor, closing the app or
+  reloading the panel counts as cancel; opening a new form restores the open one first (S3).
+- Undo by a resident takes back only the content of an installer scene, never its name, room or image (S4).
+- Uploads: only JPEG, PNG and WebP, at most 4096 pixels per side checked before decoding, requests up to 4 MB,
+  damaged files refused with an error instead of a server error. The image limit counts the files on disk (S5).
+- Templates: option values get the same checks as the settings form; scenes are loaded all or nothing (S6).
+- `capture` accepts areas, devices, labels and `all` as target (S7).
+- Main users are no longer listed under permissions; their right could not be taken anyway (S8).
+- Repair issues appear as soon as a device is removed or the music favorites change, and go when the integration is
+  removed (S9).
+- A run waiting in a delay finishes with the steps it started with when the scene is changed meanwhile; the script of a
+  deleted scene is stopped (S10).
+- Card: order by dragging as well as by arrows (spec 5.7). Lights with colour and colour temperature switch between
+  white and colour, saturation can be set. The hint "Not up to date" also shows before the first data arrived. A
+  locked device ticked again gets its stored step back. Selects follow changes made by the card (S11, S12).
+- `SECURITY.md` reviewed for 0.2.1; diagnostics count the main users instead of listing their ids (S13, S14).
+- Not changed by decision: the play button for a music favorite in the preview (spec 5.4) is struck; the card still
+  redraws on every state change (below 1 ms per pass measured in jsdom).
+
 ## 0.2.0
 
 - Stage 2. Scenes run through the script helper (mode restart): delays per step, a transition time for lights.

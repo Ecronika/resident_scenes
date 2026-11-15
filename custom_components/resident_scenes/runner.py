@@ -37,31 +37,42 @@ def batches(steps: list[dict[str, Any]]) -> list[tuple[float, list[dict[str, Any
 
 
 class SceneRunner:
-    """One script per scene version; running again restarts it."""
+    """One script per scene version; running again restarts it.
+
+    The steps are fixed when the script is built, so a run waiting in a delay finishes
+    with the steps it started with, even if the scene is changed meanwhile.
+    """
 
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry, scenes: dict[str, dict[str, Any]]) -> None:
         """Initialize the runner."""
         self.hass = hass
         self.entry = entry
         self.scenes = scenes
-        self._scripts: dict[str, tuple[int, Script]] = {}
+        self._scripts: dict[str, tuple[int, Script, list]] = {}
         entry.async_on_unload(hass.bus.async_listen(EVENT_BATCH, self._batch))
         entry.async_on_unload(self._stop_all)
 
     @callback
     def _stop_all(self) -> None:
-        for _, script in self._scripts.values():
-            self.hass.async_create_task(script.async_stop())
+        for scene_id in list(self._scripts):
+            self.async_forget(scene_id)
+
+    @callback
+    def async_forget(self, scene_id: str) -> None:
+        """Stop and drop the script of a deleted scene."""
+        if entry := self._scripts.pop(scene_id, None):
+            self.hass.async_create_task(entry[1].async_stop())
 
     async def async_run(self, scene_id: str, context: Context | None) -> None:
         """Start a scene; a run of the same scene still going is cancelled."""
         scene = self.scenes[scene_id]
-        version, script = self._scripts.get(scene_id, (None, None))
+        version, script, _ = self._scripts.get(scene_id, (None, None, None))
         if script is None or version != scene["version"]:
             if script is not None:
                 await script.async_stop()
+            groups = batches(scene["steps"])
             sequence: list[dict[str, Any]] = []
-            for index, (delay, _) in enumerate(batches(scene["steps"])):
+            for index, (delay, _) in enumerate(groups):
                 if delay:
                     sequence.append({"delay": {"seconds": delay}})
                 data = {"scene_id": scene_id, "version": scene["version"], "batch": index}
@@ -74,7 +85,7 @@ class SceneRunner:
                 script_mode=SCRIPT_MODE_RESTART,
                 logger=_LOGGER,
             )
-            self._scripts[scene_id] = (scene["version"], script)
+            self._scripts[scene_id] = (scene["version"], script, groups)
         # runs in the background: delays must not block scene.turn_on
         self.hass.async_create_background_task(
             script.async_run(context=context), f"{DOMAIN} {scene['name']}"
@@ -83,10 +94,10 @@ class SceneRunner:
     async def _batch(self, event: Event) -> None:
         data = event.data
         scene = self.scenes.get(data.get("scene_id", ""))
-        # only our own scripts fire this event with the current version (firing events needs admin)
-        if scene is None or scene["version"] != data.get("version"):
+        version, _, groups = self._scripts.get(data.get("scene_id", ""), (None, None, []))
+        # only our own scripts fire this event with their version (firing events needs admin)
+        if scene is None or version != data.get("version"):
             return
-        groups = batches(scene["steps"])
         if not isinstance(index := data.get("batch"), int) or not 0 <= index < len(groups):
             return
         await self.async_apply(scene, groups[index][1], event.context)

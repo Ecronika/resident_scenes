@@ -28,7 +28,7 @@ from custom_components.resident_scenes.store import recode_image, upload_dir
 from homeassistant.auth.const import GROUP_ID_USER
 from homeassistant.core import Context, HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
-from homeassistant.exceptions import ServiceValidationError, Unauthorized
+from homeassistant.exceptions import Unauthorized
 from homeassistant.helpers import area_registry as ar, entity_registry as er, issue_registry as ir
 from homeassistant.setup import async_setup_component
 from homeassistant.util import dt as dt_util
@@ -327,8 +327,9 @@ async def test_capture_action(hass, setup, hass_admin_user, hass_read_only_user)
             DOMAIN, "capture", {"entity_id": entity_id}, blocking=True,
             context=Context(user_id=hass_read_only_user.id),
         )
-    with pytest.raises(ServiceValidationError):
-        await hass.services.async_call(DOMAIN, "capture", {"entity_id": "light.kitchen"}, blocking=True)
+    hass.states.async_set("light.kitchen", "on", {"brightness": 90, "color_mode": "brightness"})
+    await hass.services.async_call(DOMAIN, "capture", {"entity_id": "all"}, blocking=True)  # S7: targets resolved
+    assert store.scenes[sid]["steps"][0]["attributes"]["brightness"] == 90
 
 
 async def test_rights_by_main_user(hass, setup, hass_ws_client, resident_token, hass_read_only_user) -> None:

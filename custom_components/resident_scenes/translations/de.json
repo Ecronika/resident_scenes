@@ -71,12 +71,6 @@
     }
   },
   "exceptions": {
-    "not_loaded": {
-      "message": "Resident Scenes ist nicht geladen."
-    },
-    "not_a_scene": {
-      "message": "{entity} ist keine Bewohnerszene."
-    },
     "capture_failed": {
       "message": "Der Zustand ließ sich nicht übernehmen: {error}"
     }

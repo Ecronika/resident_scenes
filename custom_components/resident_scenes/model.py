@@ -136,6 +136,28 @@ def is_music_player(hass: HomeAssistant, entity_id: str) -> bool:
     return ent is not None and ent.domain == "media_player" and ent.platform in MUSIC_PLATFORMS
 
 
+def step_issue(
+    hass: HomeAssistant, area_id: str | None, step: dict[str, Any], allowed, favorites: dict[str, str]
+) -> str | None:
+    """Return why a stored device step can only be kept: missing, not released, other area, unreachable.
+
+    One rule for the card, saving and capture (spec 4.5).
+    """
+    eid = step["entity_id"]
+    state = hass.states.get(eid)
+    if er.async_get(hass).async_get(eid) is None and state is None:
+        return "missing"
+    if eid not in allowed:
+        return "not_released"
+    if area_id and entity_area(hass, allowed[eid]) != area_id:
+        return "other_area"
+    if state is None or state.state == STATE_UNAVAILABLE:
+        return "unavailable"
+    if step.get("music") == "favorite" and step["favorite_id"] not in favorites:
+        return "favorite_missing"
+    return None
+
+
 def step_key(step: dict[str, Any]) -> str:
     """Return what a step acts on: an entity id or a called scene."""
     return step.get("entity_id") or f"scene:{step['scene_id']}"
@@ -295,11 +317,14 @@ def build_steps(
     for raw in raw_steps:
         mode = raw["mode"]
         if mode == "scene":
-            target = (scenes or {}).get(raw.get("scene_id", ""))
+            scene_id = str(raw.get("scene_id"))
+            target = (scenes or {}).get(scene_id)
+            # a stored call stays even if its target is gone or no room scene any more (like "keep")
+            kept = base.get(f"scene:{scene_id}")
             # only house scenes call scenes, only room scenes are called: no cycles possible
-            if area_id or target is None or target["area_id"] is None or target["id"] == own_id:
-                raise ValidationError("invalid_scene_call", str(raw.get("scene_id")))
-            step: dict[str, Any] = {"scene_id": target["id"], "name": target["name"]}
+            if area_id or (kept is None and (target is None or target["area_id"] is None or scene_id == own_id)):
+                raise ValidationError("invalid_scene_call", target["name"] if target else "")
+            step: dict[str, Any] = {"scene_id": scene_id, "name": target["name"] if target else kept["name"]}
         elif "entity_id" not in raw:
             raise ValidationError("invalid_step")
         elif mode == "keep":

@@ -7,9 +7,9 @@ from typing import Any
 from homeassistant.core import HomeAssistant
 
 from . import ResidentScenesConfigEntry
-from .const import CONF_PANEL_USERS, CONF_PANELS_WITH_EDIT, CONF_USERS_WITHOUT_EDIT, VERSION
+from .const import CONF_MAIN_USERS, CONF_PANEL_USERS, CONF_PANELS_WITH_EDIT, CONF_USERS_WITHOUT_EDIT, VERSION
 
-USER_KEYS = (CONF_PANEL_USERS, CONF_PANELS_WITH_EDIT, CONF_USERS_WITHOUT_EDIT)
+USER_KEYS = (CONF_MAIN_USERS, CONF_PANEL_USERS, CONF_PANELS_WITH_EDIT, CONF_USERS_WITHOUT_EDIT)
 
 
 async def async_get_config_entry_diagnostics(

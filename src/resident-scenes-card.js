@@ -1,8 +1,9 @@
 // Resident Scenes card, built with Lit and bundled into one file (npm run build).
 // No Home Assistant internal elements: only the documented card API and theme variables.
 import { LitElement, html, css, nothing } from "lit";
+import { live } from "lit/directives/live.js";
 
-const VERSION = "0.2.0"; // must match the integration (checked by tests)
+const VERSION = "0.2.1"; // must match the integration (checked by tests)
 const WS = "resident_scenes";
 const HOUSE = "_house";
 const DOMAINS = ["light", "cover", "climate", "switch", "fan", "media_player", "scene"];
@@ -29,6 +30,8 @@ const I18N = {
     preview: "Live preview", undo: "Undo last change", rights: "Permissions", may_edit: "may change scenes",
     panel: "Panel", own_image: "Own image", crop: "Section", crop_x: "Horizontal", crop_y: "Vertical",
     use_image: "Use image", room_scene: "Room scene", remove: "Remove", stale: "Not up to date, retrying …",
+    no_room_scene: "No room scene any more", white: "White", colour: "Colour", saturation: "Saturation",
+    drag: "Drag to reorder",
     light: "Lights", cover: "Shading", climate: "Climate", switch: "Switches", fan: "Fans",
     media_player: "Music", scene: "Scenes",
     err: {
@@ -67,6 +70,8 @@ const I18N = {
     undo: "Letzte Änderung zurücknehmen", rights: "Berechtigungen", may_edit: "darf Szenen ändern",
     panel: "Panel", own_image: "Eigenes Bild", crop: "Ausschnitt", crop_x: "Waagerecht", crop_y: "Senkrecht",
     use_image: "Bild übernehmen", room_scene: "Raumszene", remove: "Entfernen",
+    no_room_scene: "Keine Raumszene mehr", white: "Weiß", colour: "Farbe", saturation: "Sättigung",
+    drag: "Ziehen zum Sortieren",
     stale: "Nicht aktuell, neuer Versuch läuft …",
     light: "Licht", cover: "Beschattung", climate: "Klima", switch: "Schalter", fan: "Lüfter",
     media_player: "Musik", scene: "Szenen",
@@ -134,6 +139,7 @@ class ResidentScenesCard extends LitElement {
     this.hass?.connection.removeEventListener?.("ready", this._onReady);
     this._ro?.disconnect();
     this._unsubscribe();
+    this._endPreview(true); // leaving the editor without saving counts as cancel (review S3)
   }
 
   updated(changed) {
@@ -279,7 +285,7 @@ class ResidentScenesCard extends LitElement {
         ? html`<div class="banner">${this._t("reload")}
             <button data-action="reload" @click=${() => location.reload()}>${this._t("reload_btn")}</button></div>`
         : nothing}
-      ${this._stale && this._data ? html`<p class="muted" role="status">${this._t("stale")}</p>` : nothing}
+      ${this._stale ? html`<p class="muted" role="status">${this._t("stale")}</p>` : nothing}
       ${this._notice ? html`<p class="error" role="alert">${this._t(this._notice)}</p>` : nothing} ${body}
     </div>`;
   }
@@ -371,7 +377,7 @@ class ResidentScenesCard extends LitElement {
         <button class="primary" data-action="play" @click=${() => this._play(s.entity_id)}>▶ ${this._t("play")}</button>
         ${d.can_edit
           ? html`<label class="heart">♥
-              <select data-field="favorite" aria-label=${this._t("favorites")} @change=${(e) => this._setFavorite(e.target.value)}>
+              <select data-field="favorite" aria-label=${this._t("favorites")} .value=${live(slot < 0 ? "" : String(slot))} @change=${(e) => this._setFavorite(e.target.value)}>
                 <option value="">${this._t("none")}</option>
                 ${d.favorites.map(
                   (_, i) => html`<option value=${i} ?selected=${i === slot}>${this._t("slot")} ${i + 1}</option>`
@@ -489,6 +495,7 @@ class ResidentScenesCard extends LitElement {
   // ---------- editor ----------
 
   async _openEditor(scene) {
+    this._endPreview(true); // a form still open is dropped: restore its devices first (review S3)
     this._notice = null;
     this._rights = null;
     let result;
@@ -520,7 +527,7 @@ class ResidentScenesCard extends LitElement {
       scene_id: scene?.id, version: scene?.version, name: scene?.name ?? "",
       image: scene?.image ?? null, imageUrl: scene?.image_url ?? null,
       kind: scene?.kind ?? "resident", content_released: scene?.content_released ?? false,
-      transition: scene?.transition ?? null, steps, devices,
+      transition: scene?.transition ?? null, steps, devices, original: new Map(steps),
       favorites: result.favorites, images: result.images, room_scenes: result.room_scenes,
       preview: !this._house, // spec 5.4: on for room scenes, off for house scenes
     };
@@ -531,8 +538,9 @@ class ResidentScenesCard extends LitElement {
     const domain = step.entity_id.split(".")[0];
     if (domain === "light") {
       const v = { brightness: a.brightness ?? 255 };
-      if (a.color_temp_kelvin) v.color_temp_kelvin = a.color_temp_kelvin;
-      if (a.hs_color) Object.assign(v, { hue: a.hs_color[0], saturation: a.hs_color[1] });
+      // a light in white mode reports a colour too: take the one of its colour mode
+      if (a.color_temp_kelvin && (a.color_mode === "color_temp" || !a.hs_color)) v.color_temp_kelvin = a.color_temp_kelvin;
+      else if (a.hs_color) Object.assign(v, { hue: a.hs_color[0], saturation: a.hs_color[1] });
       return v;
     }
     if (domain === "cover") return { position: a.current_position ?? (step.state === "closed" ? 0 : 100), ...(a.current_tilt_position != null ? { tilt: a.current_tilt_position } : {}) };
@@ -721,7 +729,7 @@ class ResidentScenesCard extends LitElement {
   _renderRoomScenes() {
     const e = this._edit;
     const areas = [...new Set(e.room_scenes.map((r) => r.area_id))].sort((a, b) => this._areaName(a).localeCompare(this._areaName(b)));
-    const missing = [...e.steps].filter(([, s]) => s.choice === "scene" && s.issue === "scene_missing");
+    const missing = [...e.steps].filter(([, s]) => s.choice === "scene" && ["scene_missing", "no_room_scene"].includes(s.issue));
     return html`<h3>${this._t("scene")}</h3>
       ${areas.map((area) => {
         const current = [...e.steps.values()].find((s) => s.choice === "scene" && s.area_id === area)?.scene_id ?? "";
@@ -735,7 +743,7 @@ class ResidentScenesCard extends LitElement {
       })}
       ${missing.map(
         ([key, s]) => html`<div class="row"><span class="name">${s.name}
-          <span class="badge warn">${this._t("scene_missing")}</span></span>
+          <span class="badge warn">${this._t(s.issue)}</span></span>
           <button data-action="remove" @click=${() => this._removeStep(key)}>${this._t("remove")}</button></div>`
       )}`;
   }
@@ -768,7 +776,7 @@ class ResidentScenesCard extends LitElement {
       }
       const label = (c) => this._t(c === "off" && dev.domain === "cover" ? "closed" : c);
       controls = html`<select data-field="choice" data-entity=${dev.entity_id} aria-label=${dev.label}
-          @change=${(ev) => this._choose(dev, ev.target.value)}>
+          .value=${live(step.choice)} @change=${(ev) => this._choose(dev, ev.target.value)}>
           ${choices.map((c) => html`<option value=${c} ?selected=${c === step.choice}>${label(c)}</option>`)}
         </select>
         ${step.choice === "set" ? this._renderValues(dev, step) : nothing}
@@ -801,9 +809,23 @@ class ResidentScenesCard extends LitElement {
       <input type="range" min=${min} max=${max} data-field=${key} data-entity=${dev.entity_id} .value=${String(value)}
         @change=${(ev) => this._change(dev, { values: { ...step.values, [key]: toValue(ev.target.value) } })} /></label>`;
     if (dev.domain === "light") {
+      // the server takes the colour temperature if both are sent, so only one of them is kept
+      const white = c.color_temp && (!c.color || v.hue == null);
+      const kelvin = v.color_temp_kelvin ?? c.min_kelvin ?? 2700;
+      const mode = (m) => this._change(dev, { values: m === "white"
+        ? { brightness: v.brightness, color_temp_kelvin: kelvin }
+        : { brightness: v.brightness, hue: v.hue ?? 30, saturation: v.saturation ?? 100 } });
       return html`${slider("brightness", "brightness", 1, 100, Math.round((v.brightness ?? 255) / 2.55), (p) => Math.max(1, Math.round(p * 2.55)))}
-        ${c.color_temp ? slider("color_temp_kelvin", "color_temp", c.min_kelvin ?? 2000, c.max_kelvin ?? 6500, v.color_temp_kelvin ?? c.min_kelvin ?? 2700) : nothing}
-        ${c.color && !v.color_temp_kelvin ? slider("hue", "hue", 0, 360, v.hue ?? 30) : nothing}`;
+        ${c.color_temp && c.color
+          ? html`<select data-field="light_mode" data-entity=${dev.entity_id} aria-label=${this._t("hue")}
+              .value=${live(white ? "white" : "colour")} @change=${(ev) => mode(ev.target.value)}>
+              <option value="white" ?selected=${white}>${this._t("white")}</option>
+              <option value="colour" ?selected=${!white}>${this._t("colour")}</option></select>`
+          : nothing}
+        ${white ? slider("color_temp_kelvin", "color_temp", c.min_kelvin ?? 2000, c.max_kelvin ?? 6500, kelvin) : nothing}
+        ${c.color && !white
+          ? html`${slider("hue", "hue", 0, 360, v.hue ?? 30)}${slider("saturation", "saturation", 0, 100, v.saturation ?? 100)}`
+          : nothing}`;
     }
     if (dev.domain === "cover") {
       return html`${c.position ? slider("position", "position", 0, 100, v.position ?? 100) : nothing}
@@ -831,7 +853,9 @@ class ResidentScenesCard extends LitElement {
     if (!steps.length) return nothing;
     const max = this._data.max_delay;
     return html`<h3>${this._t("order")}</h3>
-      ${steps.map(([key, s], i) => html`<div class="row">
+      ${steps.map(([key, s], i) => html`<div class="row order ${this._dragTo === i ? "drop" : ""}">
+        <span class="handle" data-action="drag" title=${this._t("drag")} aria-hidden="true"
+          @pointerdown=${(ev) => this._drag(ev, i)}>≡</span>
         <span class="name">${s.choice === "scene" ? s.name : this._edit.devices.find((d) => d.entity_id === key)?.label ?? key}</span>
         <label class="value">${this._t("delay")}<input type="number" min="0" max=${max} data-field="delay" data-entity=${key}
           .value=${String(s.delay ?? 0)} @change=${(ev) => this._setDelay(key, Number(ev.target.value))} /></label>
@@ -847,23 +871,49 @@ class ResidentScenesCard extends LitElement {
   }
 
   _move(index, by) {
+    this._moveTo(index, index + by);
+  }
+
+  _moveTo(from, to) {
     const steps = [...this._edit.steps];
-    [steps[index], steps[index + by]] = [steps[index + by], steps[index]];
+    steps.splice(to, 0, ...steps.splice(from, 1));
     this._setEdit({ steps: new Map(steps) });
   }
 
+  // drag the handle of a row onto another row (spec 5.7); pointer events cover mouse, touch and pen
+  _drag(ev, from) {
+    ev.preventDefault();
+    const handle = ev.currentTarget;
+    handle.setPointerCapture?.(ev.pointerId);
+    const rows = [...this.renderRoot.querySelectorAll(".row.order")].map((r) => r.getBoundingClientRect());
+    const move = (e) => {
+      const to = rows.findIndex((b) => e.clientY >= b.top && e.clientY < b.bottom);
+      if (to >= 0 && to !== this._dragTo) (this._dragTo = to), this.requestUpdate();
+    };
+    const end = () => {
+      handle.removeEventListener("pointermove", move);
+      handle.removeEventListener("pointerup", end);
+      handle.removeEventListener("pointercancel", end);
+      const to = this._dragTo;
+      this._dragTo = null;
+      if (to != null && to !== from) this._moveTo(from, to);
+      else this.requestUpdate();
+    };
+    handle.addEventListener("pointermove", move);
+    handle.addEventListener("pointerup", end);
+    handle.addEventListener("pointercancel", end);
+  }
+
   _pick(dev, on) {
-    const steps = new Map(this._edit.steps);
-    if (!on) steps.delete(dev.entity_id);
-    else if (!steps.has(dev.entity_id)) steps.set(dev.entity_id, { choice: "capture", delay: 0 });
-    this._setEdit({ steps });
+    this._pickAll([dev], on);
   }
 
   _pickAll(devs, on) {
     const steps = new Map(this._edit.steps);
     for (const dev of devs) {
       if (!on) steps.delete(dev.entity_id);
-      else if (!steps.has(dev.entity_id)) steps.set(dev.entity_id, { choice: "capture", delay: 0 });
+      // ticked again: the stored step comes back, a locked device can only keep it (review S12)
+      else if (!steps.has(dev.entity_id)) steps.set(dev.entity_id, this._edit.original.get(dev.entity_id) ?? { choice: "capture", delay: 0 });
     }
     this._setEdit({ steps });
   }
@@ -1027,6 +1077,9 @@ class ResidentScenesCard extends LitElement {
     .banner { padding: 12px; border-radius: 8px; background: var(--secondary-background-color); margin: 8px 0; }
     .banner button { margin: 8px 8px 0 0; } .heart select { min-width: 90px; }
     .crop canvas { width: 100%; max-width: 320px; aspect-ratio: 4 / 3; border-radius: 8px; background: var(--secondary-background-color); }
+    .handle { cursor: grab; touch-action: none; user-select: none; min-width: 44px; min-height: 44px; display: flex;
+      align-items: center; justify-content: center; font-size: 1.4em; color: var(--secondary-text-color); }
+    .row.drop { outline: 2px dashed var(--primary-color); }
     .tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 12px; }
     .tile { position: relative; height: 110px; padding: 0; overflow: hidden; display: flex; align-items: flex-end; }
     .tile img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }

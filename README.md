@@ -47,7 +47,9 @@ view: manage       # manage (list and editor), list (run only) or favorites (fav
 ## Action
 
 `resident_scenes.capture` takes over the current state of every device of the target scenes, e.g. from an
-automation on a long press of a KNX push button. Automations run without a user and are allowed.
+automation on a long press of a KNX push button. Targets may be scenes, areas, devices, labels or `all`. A device
+that is missing, unreachable, no longer released or moved to another room keeps its stored value, and called room
+scenes stay. Automations run without a user and are allowed.
 
 ## Options
 
@@ -69,13 +71,20 @@ scenes:
     steps:
       - {entity_id: light.kitchen, mode: set, values: {brightness: 200, color_temp_kelvin: 3000}}
       - {entity_id: cover.kitchen, mode: "off", delay: 5}  # quoted, YAML reads off as false
+      - {entity_id: cover.living, mode: set, values: {position: 20, tilt: 50}}
 ```
+
+Options get the same checks as the settings form. A template is loaded completely or not at all.
+For blinds with slats give `position` and `tilt`: Home Assistant opens the slats fully if only the position is set.
 
 ## Rights and security
 
 Every command checks the logged-in account on the server. A scene only contains states of released devices and
 music favorites; free actions, templates or scripts are never accepted. Note: Home Assistant itself lets every
 user control every entity. This integration controls who changes scenes, not who switches devices.
+
+Main users manage the edit right of residents and panels in the card. Admins and main users always may edit and are
+not listed there.
 
 Images are delivered only to logged-in accounts or via signed, expiring URLs. Uploaded images are re-encoded on the
 server without metadata (no location, no time) and stored in `.storage/resident_scenes_images/`.

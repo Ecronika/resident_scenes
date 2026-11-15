@@ -43,10 +43,11 @@ from .const import (
     UPLOAD_FOLDER,
     UPLOAD_PREFIX,
 )
-from .model import ValidationError, allowed_entities, build_steps, opt
+from .model import ValidationError, allowed_entities, build_steps, music_favorites, opt, step_issue
 
 SIGN_EXPIRY = timedelta(days=1)
 UPLOAD_GRACE = 3600  # an upload not yet saved in a scene is kept this long (seconds)
+MAX_PIXEL_SIDE = 4096  # refused before decoding (memory); the card uploads 640 x 480
 CONTENT = ("name", "area_id", "image", "steps", "transition")
 
 
@@ -88,12 +89,16 @@ def recode_image(data: bytes, max_side: int, max_kb: int) -> bytes:
     """Check that data is an image and re-encode it as JPEG without metadata (location, time)."""
     from PIL import Image, ImageOps, UnidentifiedImageError  # noqa: PLC0415
 
+    formats = ["JPEG", "PNG", "WEBP"]
     try:
-        with Image.open(io.BytesIO(data)) as img:
+        with Image.open(io.BytesIO(data), formats=formats) as img:
+            # the header gives the size: refuse before decoding (a small PNG can hold 13000 x 13000 pixels)
+            if max(img.size) > MAX_PIXEL_SIDE:
+                raise ValidationError("invalid_image_file", "too many pixels")
             img.verify()
-        with Image.open(io.BytesIO(data)) as img:
+        with Image.open(io.BytesIO(data), formats=formats) as img:
             image = ImageOps.exif_transpose(img).convert("RGB")
-    except (UnidentifiedImageError, OSError, ValueError, Image.DecompressionBombError) as err:
+    except (UnidentifiedImageError, OSError, ValueError, SyntaxError, Image.DecompressionBombError) as err:
         raise ValidationError("invalid_image_file") from err
     image.thumbnail((max_side, max_side))
     for quality in (85, 75, 65, 50, 35):
@@ -129,7 +134,7 @@ class SceneStore:
         self.images: list[str] = []
         self._signed: dict[str, tuple[str, float]] = {}
         self.runner: Any = None  # SceneRunner, set up after loading
-        self.previews: dict[str, dict[str, Any]] = {}  # live preview: states before editing
+        self.previews: dict[Any, dict[str, Any]] = {}  # live preview per connection: states before editing
 
     async def async_load(self) -> None:
         """Load scenes and favorite slots and scan the image library."""
@@ -237,9 +242,12 @@ class SceneStore:
 
     async def async_add_upload(self, data: bytes) -> str:
         """Check, shrink and re-encode an uploaded image; return its image name."""
-        if len(self._uploads_in_use()) >= int(opt(self.entry, CONF_IMAGE_COUNT)):
-            raise ValidationError("image_limit", str(opt(self.entry, CONF_IMAGE_COUNT)))
         folder = upload_dir(self.hass)
+        await self._async_clean_uploads()
+        # files on disk count, also fresh uploads no scene uses yet
+        count = await self.hass.async_add_executor_job(lambda: len(list(folder.glob("*.jpg"))))
+        if count >= int(opt(self.entry, CONF_IMAGE_COUNT)):
+            raise ValidationError("image_limit", str(opt(self.entry, CONF_IMAGE_COUNT)))
         upload_id = f"{uuid4().hex}.jpg"
         max_side, max_kb = int(opt(self.entry, CONF_IMAGE_SIDE)), int(opt(self.entry, CONF_IMAGE_KB))
 
@@ -304,7 +312,12 @@ class SceneStore:
         return {"scenes": callers, "slots": slots}
 
     async def async_save_scene(
-        self, payload: dict[str, Any], user_id: str | None, is_admin: bool = False, new_id: str | None = None
+        self,
+        payload: dict[str, Any],
+        user_id: str | None,
+        is_admin: bool = False,
+        new_id: str | None = None,
+        commit: bool = True,
     ) -> dict[str, Any]:
         """Validate and store a new or changed scene."""
         scene_id: str | None = payload.get("scene_id")
@@ -370,7 +383,8 @@ class SceneStore:
         if existing and existing["area_id"] != area_id:
             self._clear_favorites(scene["id"])
         self.scenes[scene["id"]] = scene
-        await self._async_commit()
+        if commit:
+            await self._async_commit()
         return scene
 
     async def async_undo(self, scene_id: str, version: int, user_id: str | None, is_admin: bool) -> dict[str, Any]:
@@ -384,7 +398,11 @@ class SceneStore:
             raise ValidationError("nothing_to_undo")
         if not self.editable(scene, is_admin):
             raise ValidationError("protected")
-        previous = scene["previous"]
+        previous = dict(scene["previous"])
+        if not is_admin and scene["kind"] == KIND_INSTALLER:
+            # residents take back only content; name, area and image stay the installer's (spec 2)
+            previous = {k: v for k, v in previous.items() if k in ("steps", "transition")}
+            previous |= {k: scene[k] for k in ("name", "area_id", "image")}
         if previous["area_id"] and ar.async_get(self.hass).async_get_area(previous["area_id"]) is None:
             previous["area_id"] = None
         if previous["area_id"] != scene["area_id"]:
@@ -401,16 +419,17 @@ class SceneStore:
         """Take over the current state of every device of a scene (action resident_scenes.capture)."""
         scene = self.scenes[scene_id]
         allowed = allowed_entities(self.hass, self.entry)
+        favorites = music_favorites(self.hass)
         raw = []
         for step in scene["steps"]:
             entry = {"delay": step.get("delay", 0)}
-            if "scene_id" in step:
+            if "scene_id" in step:  # a stored call is kept, also when its target is gone
                 raw.append({**entry, "mode": "scene", "scene_id": step["scene_id"]})
                 continue
-            state = self.hass.states.get(step["entity_id"])
-            reachable = step["entity_id"] in allowed and state is not None and state.state != "unavailable"
-            # unreachable or no longer released: keep the stored value
-            raw.append({**entry, "entity_id": step["entity_id"], "mode": "capture" if reachable else "keep"})
+            # missing, unreachable, moved or no longer released: keep the stored value (spec 4.5)
+            issue = step_issue(self.hass, scene["area_id"], step, allowed, favorites)
+            mode = "capture" if issue in (None, "favorite_missing") else "keep"
+            raw.append({**entry, "entity_id": step["entity_id"], "mode": mode})
         payload = {k: scene[k] for k in CONTENT if scene[k] is not None or k != "transition"}
         payload |= {"scene_id": scene_id, "version": scene["version"], "steps": raw}
         return await self.async_save_scene(payload, user_id, is_admin=True)
@@ -424,6 +443,8 @@ class SceneStore:
             raise ValidationError("protected")
         del self.scenes[scene_id]
         self._clear_favorites(scene_id)
+        if self.runner is not None:
+            self.runner.async_forget(scene_id)
         await self._async_commit()
         return scene
 
@@ -432,6 +453,18 @@ class SceneStore:
 
         Scenes carry a ``key``; a scene of an earlier template with the same key is replaced.
         """
+        backup = dict(self.scenes), {k: list(v) for k, v in self.favorites.items()}
+        try:
+            count = await self._async_import(template)
+        except Exception:
+            self.scenes.clear()  # all or nothing: the runner holds this dict
+            self.scenes.update(backup[0])
+            self.favorites = backup[1]
+            raise
+        await self._async_commit()
+        return count
+
+    async def _async_import(self, template: dict[str, Any]) -> int:
         count = 0
         for item in template.get("scenes", []):
             scene_id = f"tpl_{item['key']}"
@@ -449,7 +482,7 @@ class SceneStore:
             if existing:
                 payload |= {"scene_id": scene_id, "version": existing["version"]}
             # the template key gives a stable id, so a later template replaces this scene
-            await self.async_save_scene(payload, None, is_admin=True, new_id=scene_id)
+            await self.async_save_scene(payload, None, is_admin=True, new_id=scene_id, commit=False)
             count += 1
         return count
 

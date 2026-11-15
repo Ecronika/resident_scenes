@@ -10,7 +10,7 @@ import voluptuous as vol
 from homeassistant.components import websocket_api
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.const import STATE_UNAVAILABLE
-from homeassistant.core import HomeAssistant, State, callback
+from homeassistant.core import Context, HomeAssistant, State, callback
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.state import async_reproduce_state
@@ -18,7 +18,6 @@ from homeassistant.helpers.state import async_reproduce_state
 from .const import (
     CONF_FAVORITE_SLOTS,
     CONF_HOUSE_SCENES,
-    CONF_MAIN_USERS,
     CONF_MAX_DELAY,
     CONF_NAME_LENGTH,
     CONF_PANEL_USERS,
@@ -46,6 +45,7 @@ from .model import (
     is_music_player,
     music_favorites,
     opt,
+    step_issue,
 )
 from .store import SceneStore
 
@@ -161,23 +161,6 @@ def ws_list(hass: HomeAssistant, connection: Connection, msg: dict[str, Any]) ->
     )
 
 
-def _step_issue(hass: HomeAssistant, scene: dict[str, Any], step: dict[str, Any], allowed, favorites) -> str | None:
-    """Return why a stored device step is marked: missing, not released, other area, unreachable."""
-    eid = step["entity_id"]
-    state = hass.states.get(eid)
-    if er.async_get(hass).async_get(eid) is None and state is None:
-        return "missing"
-    if eid not in allowed:
-        return "not_released"
-    if scene["area_id"] and entity_area(hass, allowed[eid]) != scene["area_id"]:
-        return "other_area"
-    if state is None or state.state == STATE_UNAVAILABLE:
-        return "unavailable"
-    if step.get("music") == "favorite" and step["favorite_id"] not in favorites:
-        return "favorite_missing"
-    return None
-
-
 @websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/scene", vol.Required("scene_id"): str})
 @callback
 def ws_scene(hass: HomeAssistant, connection: Connection, msg: dict[str, Any]) -> None:
@@ -194,9 +177,10 @@ def ws_scene(hass: HomeAssistant, connection: Connection, msg: dict[str, Any]) -
         item = dict(step)
         if "scene_id" in step:
             target = store.scenes.get(step["scene_id"])
-            item |= {"issue": None if target else "scene_missing", "name": target["name"] if target else step["name"]}
+            issue = None if target and target["area_id"] else "no_room_scene" if target else "scene_missing"
+            item |= {"issue": issue, "name": target["name"] if target else step["name"]}
         else:
-            issue = _step_issue(hass, scene, step, allowed, favorites)
+            issue = step_issue(hass, scene["area_id"], step, allowed, favorites)
             item |= {"issue": issue, "name": _name(hass, step["entity_id"])}
             if step.get("music") == "favorite":  # a renamed favorite shows its new name (spec 4.6)
                 item["favorite_name"] = favorites.get(step["favorite_id"], step.get("favorite_name"))
@@ -369,9 +353,39 @@ def ws_subscribe(hass: HomeAssistant, connection: Connection, msg: dict[str, Any
 # ---------- live preview (spec 5.4) ----------
 
 
-def _snapshots(store: SceneStore, connection: Connection) -> dict[str, State]:
-    """Per account: entity id -> state before its first preview."""
-    return store.previews.setdefault(connection.user.id, {})
+PREVIEW = f"{DOMAIN}_preview"  # key in connection.subscriptions, no message id can collide
+
+
+def _snapshots(hass: HomeAssistant, store: SceneStore, connection: Connection) -> dict[str, State]:
+    """Per connection (one editor): entity id -> state before its first preview.
+
+    A connection that closes during a preview counts as cancel (panel reloaded, app closed).
+    """
+    if connection not in store.previews:
+        store.previews[connection] = {}
+
+        @callback
+        def closed() -> None:
+            if states := list(store.previews.pop(connection, {}).values()):
+                context = Context(user_id=connection.user.id)
+                hass.async_create_background_task(_restore(hass, store, states, context), f"{DOMAIN} preview")
+
+        connection.subscriptions[PREVIEW] = closed
+    return store.previews[connection]
+
+
+async def _restore(hass: HomeAssistant, store: SceneStore, states: list[State], context: Context) -> None:
+    """Put devices back to their state from before the preview."""
+    allowed = allowed_entities(hass, store.entry)
+    states = [s for s in states if s.entity_id in allowed]
+    await async_reproduce_state(hass, [s for s in states if s.domain != "media_player"], context=context)
+    # the preview changed only volume or stopped playback, so only that is undone
+    for old in (s for s in states if s.domain == "media_player"):
+        call = partial(hass.services.async_call, "media_player", blocking=True, context=context)
+        if (volume := old.attributes.get("volume_level")) is not None:
+            await call("volume_set", {"entity_id": old.entity_id, "volume_level": volume})
+        if old.state == "playing":
+            await call("media_play", {"entity_id": old.entity_id})
 
 
 @websocket_api.websocket_command(
@@ -398,7 +412,7 @@ async def ws_preview(hass: HomeAssistant, connection: Connection, msg: dict[str,
     except ValidationError as err:
         connection.send_error(msg["id"], err.code, str(err))
         return
-    snapshots = _snapshots(store, connection)
+    snapshots = _snapshots(hass, store, connection)
     eid = step["entity_id"]
     if eid not in snapshots and (current := hass.states.get(eid)):
         snapshots[eid] = current
@@ -421,36 +435,25 @@ async def ws_preview_end(hass: HomeAssistant, connection: Connection, msg: dict[
     """End the preview; on cancel the devices go back to their state from before editing."""
     if (store := _store(hass, connection, msg["id"])) is None:
         return
-    states = list(store.previews.pop(connection.user.id, {}).values())
+    connection.subscriptions.pop(PREVIEW, None)
+    states = list(store.previews.pop(connection, {}).values())
     if msg["restore"] and states:
-        allowed = allowed_entities(hass, store.entry)
-        states = [s for s in states if s.entity_id in allowed]
-        context = connection.context(msg)
-        await async_reproduce_state(hass, [s for s in states if s.domain != "media_player"], context=context)
-        # the preview changed only volume or stopped playback, so only that is undone
-        for old in (s for s in states if s.domain == "media_player"):
-            call = partial(hass.services.async_call, "media_player", blocking=True, context=context)
-            if (volume := old.attributes.get("volume_level")) is not None:
-                await call("volume_set", {"entity_id": old.entity_id, "volume_level": volume})
-            if old.state == "playing":
-                await call("media_play", {"entity_id": old.entity_id})
+        await _restore(hass, store, states, connection.context(msg))
     connection.send_result(msg["id"])
 
 
 # ---------- rights managed by main users (spec 3) ----------
 
 
-def _rank(store: SceneStore, user) -> int:
-    """2 admin, 1 main user, 0 other accounts."""
-    return 2 if user.is_admin else 1 if user.id in opt(store.entry, CONF_MAIN_USERS) else 0
+async def _accounts(hass: HomeAssistant, store: SceneStore) -> list[dict[str, Any]]:
+    """Resident and panel accounts: name and kind only.
 
-
-async def _accounts(hass: HomeAssistant, store: SceneStore, caller) -> list[dict[str, Any]]:
-    """Resident and panel accounts below the caller: name and kind only."""
+    Admins and main users are left out, they always may edit (spec 3).
+    """
     panels = opt(store.entry, CONF_PANEL_USERS)
     result = []
     for user in await hass.auth.async_get_users():
-        if not can_control(user) or user.id == caller.id or _rank(store, user) >= _rank(store, caller):
+        if not can_control(user) or is_main_user(store.entry, user):
             continue
         result.append(
             {
@@ -472,7 +475,7 @@ async def ws_rights(hass: HomeAssistant, connection: Connection, msg: dict[str, 
     if not is_main_user(store.entry, connection.user):
         connection.send_error(msg["id"], websocket_api.ERR_UNAUTHORIZED, "Only main users manage rights")
         return
-    connection.send_result(msg["id"], {"accounts": await _accounts(hass, store, connection.user)})
+    connection.send_result(msg["id"], {"accounts": await _accounts(hass, store)})
 
 
 @websocket_api.websocket_command(
@@ -486,7 +489,7 @@ async def ws_set_right(hass: HomeAssistant, connection: Connection, msg: dict[st
     caller = connection.user
     accounts = {}
     if is_main_user(store.entry, caller):
-        accounts = {a["user_id"]: a for a in await _accounts(hass, store, caller)}
+        accounts = {a["user_id"]: a for a in await _accounts(hass, store)}
     if (account := accounts.get(msg["user_id"])) is None:
         connection.send_error(msg["id"], websocket_api.ERR_UNAUTHORIZED, "This account cannot be changed")
         return

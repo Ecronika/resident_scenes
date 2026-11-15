@@ -14,7 +14,7 @@ from .const import CONF_IMAGE_KB, DOMAIN, IMAGE_URL, PHOTO_URL, UPLOAD_URL
 from .model import ValidationError, can_edit, opt
 from .store import SceneStore, image_dir, upload_dir, valid_image_name, valid_upload_id
 
-MAX_REQUEST = 20 * 1024 * 1024  # the card shrinks images before upload; this is just a stop
+MAX_REQUEST = 4 * 1024 * 1024  # the card shrinks images before upload; this is just a stop
 
 
 def _store(hass: HomeAssistant) -> SceneStore:
