@@ -7,21 +7,22 @@ Scenes are stored by the integration (not in YAML), survive restarts, are part o
 Version 0.1 (stage 1) can:
 
 - room scenes and house scenes, created from the current state or with devices set to "off" without switching them
-- music steps for Sonos: off, on with volume, or a Sonos favorite with volume (favorites only, no free selection)
+- music steps for any released media player: off, or on with volume; with Sonos also a Sonos favorite with volume
+  (favorites only, no free selection)
 - favorite slots per room and for the house
 - scene images from an installer image library
-- edit right for every account by default; the installer can withdraw it per account; panel accounts have no edit right by default
+- edit right for every account that may control devices (not read-only accounts); the installer can withdraw it per account; panel accounts have no edit right by default
 - device release via a label; locks, alarm panels and configuration entities are never accepted
 - logbook entries for every change, attributed to the account
 
 Not yet: values set directly (brightness, colour, position), delays, live preview, house scenes calling room scenes,
-installer scenes, own image upload, rights managed by main users in the card, undo, repairs. Music only with Sonos.
+installer scenes, own image upload, rights managed by main users in the card, undo, repairs. Favorites only with Sonos.
 
 ## Installation
 
 1. Home Assistant 2026.11 and later: Settings → Marketplace → custom repositories → add `Ecronika/resident_scenes`
    as *Integration*, install, restart Home Assistant. Before 2026.11: the same in HACS → Custom repositories.
-2. Settings → Devices & services → Add integration → **Resident Scenes**.
+2. Settings → Devices & services → Add integration → **Resident Scenes**. The label `resident_scenes` is created.
 3. Give the label `resident_scenes` to the lights, covers, climate, switches, fans, media players and scenes residents
    may use (on the entity or its device).
 4. For Sonos favorites enable the (disabled by default) Sonos favorites sensor.

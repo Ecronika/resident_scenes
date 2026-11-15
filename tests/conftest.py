@@ -6,6 +6,8 @@ import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.resident_scenes.const import DOMAIN
+from homeassistant.auth.const import GROUP_ID_USER
+from homeassistant.auth.models import User
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import area_registry as ar, entity_registry as er, label_registry as lr
 from homeassistant.setup import async_setup_component
@@ -46,3 +48,11 @@ async def setup(hass: HomeAssistant) -> MockConfigEntry:
     assert await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
     return entry
+
+
+@pytest.fixture
+async def resident_token(hass: HomeAssistant, hass_read_only_user: User, hass_read_only_access_token: str) -> str:
+    """Token of an ordinary resident account (group system-users, no admin)."""
+    hass_read_only_user.groups = [await hass.auth.async_get_group(GROUP_ID_USER)]
+    hass_read_only_user.invalidate_cache()
+    return hass_read_only_access_token

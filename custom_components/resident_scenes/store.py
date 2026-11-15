@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import timedelta
+import os
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote
@@ -10,8 +11,8 @@ from uuid import uuid4
 
 from homeassistant.components.http.auth import async_sign_path
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
-from homeassistant.helpers import area_registry as ar
+from homeassistant.core import Event, HomeAssistant, callback
+from homeassistant.helpers import area_registry as ar, entity_registry as er
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
@@ -23,6 +24,7 @@ from .const import (
     CONF_NAME_LENGTH,
     CONF_SCENES_PER_AREA,
     CONF_STEPS_PER_SCENE,
+    EVENT_CHANGED,
     HOUSE,
     IMAGE_SUFFIXES,
     IMAGE_URL,
@@ -38,12 +40,25 @@ SIGN_EXPIRY = timedelta(days=1)
 def valid_image_name(name: str) -> bool:
     """Return whether a file name is a plain image name (no path parts)."""
     path = Path(name)
-    return path.name == name and not name.startswith(".") and path.suffix.lower() in IMAGE_SUFFIXES
+    return (
+        path.name == name
+        and not name.startswith(".")
+        and not set(name) & set("#?%")  # would break the signed URL
+        and path.suffix.lower() in IMAGE_SUFFIXES
+    )
 
 
 def image_dir(hass: HomeAssistant, entry: ConfigEntry) -> Path:
-    """Return the folder of the installer's image library."""
-    return Path(hass.config.path(opt(entry, CONF_IMAGE_DIR)))
+    """Return the folder of the installer's image library, always inside the config folder."""
+    folder = str(opt(entry, CONF_IMAGE_DIR))
+    return Path(hass.config.path(folder if inside_config(hass, folder) else "resident_scenes"))
+
+
+def inside_config(hass: HomeAssistant, folder: str) -> bool:
+    """Return whether a folder lies inside the config folder (string check, no file access)."""
+    config = os.path.normpath(hass.config.path())
+    return os.path.normpath(os.path.join(config, folder)).startswith(config + os.sep)
+
 
 
 class SceneStore:
@@ -57,6 +72,7 @@ class SceneStore:
         self.scenes: dict[str, dict[str, Any]] = {}
         self.favorites: dict[str, list[str | None]] = {}
         self.images: list[str] = []
+        self._signed: dict[tuple[str, bool], tuple[str, float]] = {}
 
     async def async_load(self) -> None:
         """Load scenes and favorite slots and scan the image library."""
@@ -64,6 +80,59 @@ class SceneStore:
         self.scenes = data.get("scenes", {})
         self.favorites = data.get("favorites", {})
         await self.async_scan_images()
+        # areas deleted while Home Assistant was stopped
+        areas = ar.async_get(self.hass)
+        if gone := {s["area_id"] for s in self.scenes.values() if s["area_id"]} - set(areas.areas):
+            for area_id in gone:
+                self._move_to_house(area_id)
+            await self._async_commit()
+
+    @callback
+    def async_listen(self) -> None:
+        """Follow deleted areas and renamed entity ids."""
+        hass = self.hass
+        self.entry.async_on_unload(
+            hass.bus.async_listen(ar.EVENT_AREA_REGISTRY_UPDATED, self._area_updated)
+        )
+        self.entry.async_on_unload(
+            hass.bus.async_listen(er.EVENT_ENTITY_REGISTRY_UPDATED, self._entity_updated)
+        )
+
+    async def _area_updated(self, event: Event[ar.EventAreaRegistryUpdatedData]) -> None:
+        if event.data["action"] == "remove" and self._move_to_house(event.data["area_id"]):
+            await self._async_commit()
+
+    async def _entity_updated(self, event: Event[er.EventEntityRegistryUpdatedData]) -> None:
+        data = event.data
+        if data["action"] != "update" or not (old := data.get("old_entity_id")):
+            return
+        changed = False
+        for scene in self.scenes.values():
+            for step in scene["steps"]:
+                if step["entity_id"] == old:
+                    step["entity_id"] = data["entity_id"]
+                    scene["version"] += 1  # open editors hold the old id
+                    changed = True
+        if changed:
+            await self._async_commit()
+
+    def _move_to_house(self, area_id: str) -> bool:
+        """Scenes of a deleted area become house scenes; its favorite slots go."""
+        moved = [s for s in self.scenes.values() if s["area_id"] == area_id]
+        self.favorites.pop(area_id, None)
+        for scene in moved:
+            names = {s["name"].casefold() for s in self.scenes.values() if s["area_id"] is None}
+            base, n = scene["name"], 2
+            while scene["name"].casefold() in names:
+                suffix = f" ({n})"
+                scene["name"] = base[: int(opt(self.entry, CONF_NAME_LENGTH)) - len(suffix)] + suffix
+                n += 1
+            scene["area_id"] = None
+            scene["version"] += 1
+            self.hass.bus.async_fire(
+                EVENT_CHANGED, {"scene_id": scene["id"], "name": scene["name"], "action": "moved to house"}
+            )
+        return bool(moved)
 
     async def async_scan_images(self) -> None:
         """Read the image library folder."""
@@ -86,10 +155,16 @@ class SceneStore:
         return self.sign(name, content_user=content_user)
 
     def sign(self, name: str, *, content_user: bool = False) -> str:
-        """Sign the URL of a library image."""
-        return async_sign_path(
+        """Sign the URL of a library image; reused for half its lifetime so browsers can cache it."""
+        now = dt_util.utcnow().timestamp()
+        key = (name, content_user)
+        if (cached := self._signed.get(key)) and cached[1] > now:
+            return cached[0]
+        url = async_sign_path(
             self.hass, f"{IMAGE_URL}/{quote(name)}", SIGN_EXPIRY, use_content_user=content_user
         )
+        self._signed[key] = (url, now + SIGN_EXPIRY.total_seconds() / 2)
+        return url
 
     def slots(self, scope: str) -> list[str | None]:
         """Return the favorite slots of a scope, padded to the configured count."""
@@ -127,7 +202,7 @@ class SceneStore:
         if base_id and base_id not in self.scenes:
             raise ValidationError("not_found")
         base_steps = self.scenes[base_id]["steps"] if base_id else []
-        steps = build_steps(self.hass, self.entry, payload["steps"], base_steps)
+        steps = build_steps(self.hass, self.entry, payload["steps"], base_steps, area_id)
 
         scene = {
             "id": scene_id or uuid4().hex,

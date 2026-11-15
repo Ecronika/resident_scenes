@@ -8,6 +8,7 @@ import logging
 from typing import Any
 
 from homeassistant.auth.models import User
+from homeassistant.auth.permissions.const import POLICY_CONTROL
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import ATTR_ENTITY_ID, STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import Context, HomeAssistant, State
@@ -69,6 +70,9 @@ def can_edit(entry: ConfigEntry, user: User) -> bool:
     if user.is_admin:
         return True
     if user.system_generated or not user.is_active:
+        return False
+    # editing needs the right to run scenes (e.g. not for read-only accounts)
+    if not user.permissions.access_all_entities(POLICY_CONTROL):
         return False
     if user.id in opt(entry, CONF_PANEL_USERS):
         return user.id in opt(entry, CONF_PANELS_WITH_EDIT)
@@ -166,11 +170,13 @@ def build_steps(
     entry: ConfigEntry,
     raw_steps: list[dict[str, Any]],
     base_steps: list[dict[str, Any]],
+    area_id: str | None = None,
 ) -> list[dict[str, Any]]:
     """Validate the requested steps and resolve them into stored steps.
 
     Modes: capture (current state), off (without switching), keep (stored
-    value of the base scene) and music (media players only).
+    value of the base scene) and music (media players only). ``keep`` also works
+    for devices no longer released or moved, so the scene stays editable (spec 4.11).
     """
     allowed = allowed_entities(hass, entry)
     favorites = music_favorites(hass)
@@ -182,13 +188,15 @@ def build_steps(
         if entity_id in seen:
             raise ValidationError("duplicate_entity", entity_id)
         seen.add(entity_id)
-        if entity_id not in allowed:
-            raise ValidationError("entity_not_allowed", entity_id)
         domain = entity_id.split(".", 1)[0]
         mode = raw["mode"]
         step: dict[str, Any] | None
         if mode == "keep":
             step = base.get(entity_id)
+        elif entity_id not in allowed or (
+            area_id and entity_area(hass, allowed[entity_id]) != area_id
+        ):
+            raise ValidationError("entity_not_allowed", entity_id)
         elif mode == "capture":
             step = _capture(hass, entity_id, favorites) or base.get(entity_id)
             if step is None:
@@ -255,42 +263,41 @@ async def _play_music(
 
 
 async def async_activate(
-    hass: HomeAssistant, scene: dict[str, Any], context: Context | None
+    hass: HomeAssistant, entry: ConfigEntry, scene: dict[str, Any], context: Context | None
 ) -> None:
-    """Apply all steps of a scene together, skipping unreachable devices.
+    """Apply all steps of a scene together, skipping unreachable or unreleased devices.
 
     shortcut: steps run in parallel without the script helper, switch to it with delays in stage 2.
     """
     favorites = music_favorites(hass)
-    states: list[State] = []
-    jobs: list[Any] = []
+    allowed = allowed_entities(hass, entry)
+    jobs: list[tuple[str, Any]] = []
     skipped: list[str] = []
     for step in scene["steps"]:
         entity_id = step["entity_id"]
         current = hass.states.get(entity_id)
-        if current is None or current.state == STATE_UNAVAILABLE:
+        if entity_id not in allowed or current is None or current.state == STATE_UNAVAILABLE:
             skipped.append(entity_id)
         elif step.get("call"):
-            jobs.append(
-                hass.services.async_call(
-                    "scene", "turn_on", {ATTR_ENTITY_ID: entity_id}, blocking=True, context=context
-                )
-            )
+            jobs.append((entity_id, hass.services.async_call(
+                "scene", "turn_on", {ATTR_ENTITY_ID: entity_id}, blocking=True, context=context
+            )))
         elif "music" in step:
             if step["music"] == "favorite" and step["favorite_id"] not in favorites:
                 skipped.append(entity_id)
             else:
-                jobs.append(_play_music(hass, step, context))
+                jobs.append((entity_id, _play_music(hass, step, context)))
         else:
-            states.append(State(entity_id, step["state"], step["attributes"]))
-    if states:
-        jobs.append(async_reproduce_state(hass, states, context=context))
-    for result in await asyncio.gather(*jobs, return_exceptions=True):
-        if isinstance(result, Exception):
-            _LOGGER.warning("Scene %s: a step failed: %s", scene["name"], result)
-    if skipped:
+            state = State(entity_id, step["state"], step["attributes"])
+            jobs.append((entity_id, async_reproduce_state(hass, [state], context=context)))
+    results = await asyncio.gather(*(job for _, job in jobs), return_exceptions=True)
+    failed = [eid for (eid, _), res in zip(jobs, results, strict=True) if isinstance(res, Exception)]
+    for (eid, _), res in zip(jobs, results, strict=True):
+        if isinstance(res, Exception):
+            _LOGGER.warning("Scene %s: %s failed: %s", scene["name"], eid, res)
+    if skipped or failed:
         hass.bus.async_fire(
             EVENT_SKIPPED,
-            {"scene_id": scene["id"], "name": scene["name"], "entities": skipped},
+            {"scene_id": scene["id"], "name": scene["name"], "entities": skipped, "failed": failed},
             context=context,
         )

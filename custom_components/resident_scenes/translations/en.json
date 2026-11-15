@@ -31,6 +31,9 @@
           "image_dir": "An image named after an area id is the default image of that area."
         }
       }
+    },
+    "error": {
+      "outside_config": "The folder must be inside the config folder."
     }
   }
 }

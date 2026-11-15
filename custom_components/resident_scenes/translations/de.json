@@ -31,6 +31,9 @@
           "image_dir": "Ein Bild mit der Kennung eines Raums als Namen ist das Standardbild dieses Raums."
         }
       }
+    },
+    "error": {
+      "outside_config": "Der Ordner muss im Konfigurationsordner liegen."
     }
   }
 }

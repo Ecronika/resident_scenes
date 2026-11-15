@@ -8,12 +8,13 @@ from homeassistant.components.http import StaticPathConfig
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers import config_validation as cv, label_registry as lr
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.typing import ConfigType
 
-from .const import CARD_URL, DOMAIN, SIGNAL_CHANGED, VERSION
+from .const import CARD_URL, CONF_LABEL, DOMAIN, SIGNAL_CHANGED, VERSION
 from .http import ImageView
+from .model import opt
 from .store import SceneStore
 from .websocket import async_register
 
@@ -42,7 +43,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ResidentScenesConfigEntr
     """Load the scenes."""
     store = SceneStore(hass, entry)
     await store.async_load()
+    store.async_listen()
     entry.runtime_data = store
+    labels = lr.async_get(hass)
+    if labels.async_get_label(label := opt(entry, CONF_LABEL)) is None:
+        labels.async_create(label)  # without it the device list stays empty with no hint why
     entry.async_on_unload(entry.add_update_listener(_async_options_updated))
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     return True

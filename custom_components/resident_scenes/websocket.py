@@ -14,7 +14,9 @@ from homeassistant.helpers.dispatcher import async_dispatcher_connect
 
 from .const import (
     CONF_FAVORITE_SLOTS,
+    CONF_HOUSE_SCENES,
     CONF_NAME_LENGTH,
+    CONF_SCENES_PER_AREA,
     DOMAIN,
     EVENT_CHANGED,
     HOUSE,
@@ -107,6 +109,10 @@ async def ws_list(hass: HomeAssistant, connection: Connection, msg: dict[str, An
             "can_edit": can_edit(store.entry, connection.user),
             "name_length": int(opt(store.entry, CONF_NAME_LENGTH)),
             "favorite_slots": int(opt(store.entry, CONF_FAVORITE_SLOTS)),
+            "limits": {
+                "area": int(opt(store.entry, CONF_SCENES_PER_AREA)),
+                "house": int(opt(store.entry, CONF_HOUSE_SCENES)),
+            },
             "scenes": scenes,
             "favorites": {scope: store.slots(scope) for scope in scopes},
             "foreign_scenes": foreign,

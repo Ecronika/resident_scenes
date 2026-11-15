@@ -94,6 +94,12 @@ class ResidentScene(Scene):
         self._sync_area()
 
     @callback
+    def async_entity_id_changed(self, old_entity_id: str) -> None:
+        """Keep the entity on an entity id change (2026.11+) instead of re-adding it."""
+        if parent := getattr(super(), "async_entity_id_changed", None):
+            parent(old_entity_id)
+
+    @callback
     def refresh(self) -> None:
         """Apply a changed scene."""
         self._update_attrs()
@@ -111,4 +117,4 @@ class ResidentScene(Scene):
 
     async def async_activate(self, **kwargs: Any) -> None:
         """Run the scene."""
-        await async_activate(self.hass, self._scene, self._context)
+        await async_activate(self.hass, self._store.entry, self._scene, self._context)

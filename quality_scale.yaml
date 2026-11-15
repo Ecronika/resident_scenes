@@ -35,5 +35,5 @@ rules:
   diagnostics: done
   repair-issues: todo  # stage 2
   entity-translations: exempt  # entity names are user given
-  exception-translations: done  # error codes translated in the card
+  exception-translations: todo  # card translates error codes; server-side translated exceptions come with stage 2 actions
   icon-translations: exempt

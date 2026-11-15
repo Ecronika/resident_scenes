@@ -83,10 +83,10 @@ async def test_flows(hass: HomeAssistant) -> None:
 
 
 async def test_create_capture_and_activate(
-    hass: HomeAssistant, setup: MockConfigEntry, hass_ws_client, hass_read_only_access_token
+    hass: HomeAssistant, setup: MockConfigEntry, hass_ws_client, resident_token
 ) -> None:
     """A non-admin creates a scene from the current state; running it restores it."""
-    call = await _ws(hass, hass_ws_client, hass_read_only_access_token)
+    call = await _ws(hass, hass_ws_client, resident_token)
     changes = []
     hass.bus.async_listen(EVENT_CHANGED, changes.append)
 
@@ -157,10 +157,10 @@ async def test_create_capture_and_activate(
 
 
 async def test_validation(
-    hass: HomeAssistant, setup: MockConfigEntry, hass_ws_client, hass_read_only_access_token
+    hass: HomeAssistant, setup: MockConfigEntry, hass_ws_client, resident_token
 ) -> None:
     """Unreleased devices, duplicate names, stale versions and unknown favorites are rejected."""
-    call = await _ws(hass, hass_ws_client, hass_read_only_access_token)
+    call = await _ws(hass, hass_ws_client, resident_token)
 
     async def save(**kw):
         return await call(type=f"{DOMAIN}/save", **{"name": "A", "area_id": "kitchen", "steps": [], **kw})
@@ -198,11 +198,11 @@ async def test_validation(
 
 
 async def test_limits_and_unavailable(
-    hass: HomeAssistant, setup: MockConfigEntry, hass_ws_client, hass_read_only_access_token
+    hass: HomeAssistant, setup: MockConfigEntry, hass_ws_client, resident_token
 ) -> None:
     """Scene and step limits, capturing an unreachable device."""
     hass.config_entries.async_update_entry(setup, options={"scenes_per_area": 1, "steps_per_scene": 1})
-    call = await _ws(hass, hass_ws_client, hass_read_only_access_token)
+    call = await _ws(hass, hass_ws_client, resident_token)
     hass.states.async_set("light.kitchen", "unavailable")
     step = {"entity_id": "light.kitchen", "mode": "capture"}
     res = await call(type=f"{DOMAIN}/save", name="X", area_id="kitchen", steps=[step])
@@ -219,10 +219,10 @@ async def test_rights(
     setup: MockConfigEntry,
     hass_ws_client,
     hass_read_only_user: User,
-    hass_read_only_access_token: str,
+    resident_token: str,
 ) -> None:
     """Excluded accounts and panels may run but not change; a panel can be released."""
-    call = await _ws(hass, hass_ws_client, hass_read_only_access_token)
+    call = await _ws(hass, hass_ws_client, resident_token)
     uid = hass_read_only_user.id
     for options, allowed in (
         ({}, True),
@@ -247,10 +247,10 @@ async def test_rights(
 
 
 async def test_favorites_delete_and_subscribe(
-    hass: HomeAssistant, setup: MockConfigEntry, hass_ws_client, hass_read_only_access_token
+    hass: HomeAssistant, setup: MockConfigEntry, hass_ws_client, resident_token
 ) -> None:
     """Slots follow the scope, deleting empties them and removes the entity; cards are notified."""
-    call = await _ws(hass, hass_ws_client, hass_read_only_access_token)
+    call = await _ws(hass, hass_ws_client, resident_token)
     assert (await call(type=f"{DOMAIN}/subscribe"))["success"]
     cook = (await call(type=f"{DOMAIN}/save", name="Cook", area_id="kitchen", steps=[]))["result"]["scene_id"]
     away_steps = [{"entity_id": "light.hall", "mode": "off"}]
@@ -294,10 +294,10 @@ async def test_favorites_delete_and_subscribe(
 
 
 async def test_skipped_and_failed_steps(
-    hass: HomeAssistant, setup: MockConfigEntry, hass_ws_client, hass_read_only_access_token
+    hass: HomeAssistant, setup: MockConfigEntry, hass_ws_client, resident_token
 ) -> None:
     """Unreachable devices and missing favorites are skipped and logged, the rest runs."""
-    call = await _ws(hass, hass_ws_client, hass_read_only_access_token)
+    call = await _ws(hass, hass_ws_client, resident_token)
     news = {"entity_id": "media_player.kitchen", "mode": "music", "music": "favorite", "volume": 0.3}
     res = await call(
         type=f"{DOMAIN}/save",
@@ -347,8 +347,8 @@ async def test_music_off_on_and_scene_call(hass: HomeAssistant, setup: MockConfi
     )
     loud = {"entity_id": "media_player.kitchen", "mode": "music", "music": "on", "volume": 0.7}
     on = await store.async_save_scene({"name": "Loud", "steps": [loud]}, "user")
-    await async_activate(hass, off, None)
-    await async_activate(hass, on, None)
+    await async_activate(hass, setup, off, None)
+    await async_activate(hass, setup, on, None)
     assert len(stop) == 1 and len(media_play) == 1
     assert volume[0].data["volume_level"] == 0.7
     assert scene_call[0].data["entity_id"] == "scene.knx_tv"
@@ -367,18 +367,30 @@ async def test_images(
     hass_client,
     hass_client_no_auth,
     hass_ws_client,
-    hass_read_only_access_token,
+    resident_token,
 ) -> None:
     """Library images are signed, served to logged-in users only, and default per area."""
+    folder = Path(hass.config.path("resident_scenes"))
+    files = {"kitchen.jpg": b"\xff\xd8 kitchen", "sofa.png": b"png", "notes.txt": b"x"}
+
     def make_library() -> None:
-        folder = Path(hass.config.path("resident_scenes"))
         folder.mkdir(exist_ok=True)
-        (folder / "kitchen.jpg").write_bytes(b"\xff\xd8 kitchen")
-        (folder / "sofa.png").write_bytes(b"png")
-        (folder / "notes.txt").write_text("x")
+        for name, data in files.items():
+            (folder / name).write_bytes(data)
+
+    def clean() -> None:  # the config folder is shared between tests
+        for name in files:
+            (folder / name).unlink(missing_ok=True)
 
     await hass.async_add_executor_job(make_library)
-    call = await _ws(hass, hass_ws_client, hass_read_only_access_token)
+    try:
+        await _check_images(hass, hass_client, hass_client_no_auth, hass_ws_client, resident_token)
+    finally:
+        await hass.async_add_executor_job(clean)
+
+
+async def _check_images(hass, hass_client, hass_client_no_auth, hass_ws_client, resident_token) -> None:
+    call = await _ws(hass, hass_ws_client, resident_token)
     listing = (await call(type=f"{DOMAIN}/list"))["result"]
     assert [i["name"] for i in listing["images"]] == ["kitchen.jpg", "sofa.png"]
     assert "authSig=" in listing["images"][0]["url"]
@@ -410,6 +422,9 @@ async def test_logbook(hass: HomeAssistant) -> None:
     assert describers[EVENT_CHANGED](event) == {"name": "Eve", "message": "scene created", "entity_id": "scene.eve"}
     event = type("E", (), {"data": {"name": "Eve", "entities": ["light.a", "light.b"]}})
     assert describers[EVENT_SKIPPED](event)["message"] == "skipped light.a, light.b"
+    hass.states.async_set("light.a", "on", {"friendly_name": "Sofa"})
+    event = type("E", (), {"data": {"name": "Eve", "entities": [], "failed": ["light.a"]}})
+    assert describers[EVENT_SKIPPED](event)["message"] == "failed Sofa"
 
 
 async def test_card_registration(hass: HomeAssistant) -> None:

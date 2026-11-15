@@ -29,12 +29,18 @@ def async_describe_events(
             entry[LOGBOOK_ENTRY_ENTITY_ID] = event.data["entity_id"]
         return entry
 
+    def names(entity_ids: list[str]) -> str:
+        return ", ".join((s.name if (s := hass.states.get(e)) else e) for e in entity_ids)
+
+    # logbook messages are English like those of core integrations (no translation API for them)
     @callback
     def describe_skipped(event: Event) -> dict[str, Any]:
-        return {
-            LOGBOOK_ENTRY_NAME: event.data["name"],
-            LOGBOOK_ENTRY_MESSAGE: "skipped " + ", ".join(event.data["entities"]),
-        }
+        parts = []
+        if event.data["entities"]:
+            parts.append("skipped " + names(event.data["entities"]))
+        if event.data.get("failed"):
+            parts.append("failed " + names(event.data["failed"]))
+        return {LOGBOOK_ENTRY_NAME: event.data["name"], LOGBOOK_ENTRY_MESSAGE: "; ".join(parts)}
 
     async_describe_event(DOMAIN, EVENT_CHANGED, describe_changed)
     async_describe_event(DOMAIN, EVENT_SKIPPED, describe_skipped)

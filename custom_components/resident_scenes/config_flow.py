@@ -33,6 +33,7 @@ from .const import (
     DEFAULTS,
     DOMAIN,
 )
+from .store import inside_config
 
 LIMITS = {
     CONF_SCENES_PER_AREA: 200,
@@ -41,6 +42,9 @@ LIMITS = {
     CONF_NAME_LENGTH: 100,
     CONF_FAVORITE_SLOTS: 12,
 }
+
+
+RIGHTS = (CONF_USERS_WITHOUT_EDIT, CONF_PANEL_USERS, CONF_PANELS_WITH_EDIT)
 
 
 class ResidentScenesConfigFlow(ConfigFlow, domain=DOMAIN):
@@ -70,14 +74,26 @@ class ResidentScenesOptionsFlow(OptionsFlow):
 
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Show all options on one page."""
+        errors: dict[str, str] = {}
         if user_input is not None:
-            return self.async_create_entry(data={k: int(v) if k in LIMITS else v for k, v in user_input.items()})
+            if not inside_config(self.hass, user_input[CONF_IMAGE_DIR]):
+                errors[CONF_IMAGE_DIR] = "outside_config"
+            else:
+                return self.async_create_entry(
+                    data={k: int(v) if k in LIMITS else v for k, v in user_input.items()}
+                )
         users = [
             SelectOptionDict(value=u.id, label=u.name or u.id)
             for u in await self.hass.auth.async_get_users()
             if not u.system_generated and u.is_active and not u.is_admin
         ]
         user_select = SelectSelector(SelectSelectorConfig(options=users, multiple=True))
+        # removed or promoted accounts would make the form unsavable
+        known = {u["value"] for u in users}
+        current = {
+            k: [uid for uid in v if uid in known] if k in RIGHTS else v
+            for k, v in self.config_entry.options.items()
+        }
         schema: dict[Any, Any] = {
             vol.Required(CONF_LABEL): LabelSelector(),
             vol.Optional(CONF_USERS_WITHOUT_EDIT): user_select,
@@ -91,7 +107,8 @@ class ResidentScenesOptionsFlow(OptionsFlow):
         schema[vol.Required(CONF_IMAGE_DIR)] = TextSelector()
         return self.async_show_form(
             step_id="init",
+            errors=errors,
             data_schema=self.add_suggested_values_to_schema(
-                vol.Schema(schema), {**DEFAULTS, **self.config_entry.options}
+                vol.Schema(schema), {**DEFAULTS, **current}
             ),
         )
