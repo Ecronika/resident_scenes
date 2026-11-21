@@ -159,7 +159,7 @@ const types = (s) => s.calls.map((c) => c.type.split("/")[1]);
     assert.strictEqual(types(s).filter((t) => t === "preview").length, 1, "the light is switched off for the preview");
     card.remove(); // dashboard left, panel reloaded, browser closed
     await tick();
-    assert.strictEqual(JSON.stringify(s.calls.at(-1)), JSON.stringify({ type: "resident_scenes/preview_end", restore: true })); // FIXED (S3)
+    assert.strictEqual(JSON.stringify(s.calls.at(-1)), JSON.stringify({ type: "resident_scenes/preview_end", restore: true, edit: card._editKey })); // FIXED (S3)
   }
   {
     const s = world();

@@ -172,11 +172,11 @@ const make = async (config) => {
   rr.querySelector('[data-action="group-off"][data-group="cover"]').click();
   await tick();
   same(calls.find((c) => c.type.endsWith("/preview")), {
-    type: "resident_scenes/preview", step: { entity_id: "cover.r2", mode: "off" }, area_id: "r2",
+    type: "resident_scenes/preview", step: { entity_id: "cover.r2", mode: "off" }, edit: room._editKey, area_id: "r2",
   });
   rr.querySelector('[data-action="cancel"]').click();
   await tick();
-  same(calls.at(-1), { type: "resident_scenes/preview_end", restore: true });
+  same(calls.at(-1), { type: "resident_scenes/preview_end", restore: true, edit: room._editKey });
 
   console.log("card tests passed");
   process.exit(0); // the card keeps a refresh timer running

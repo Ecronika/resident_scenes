@@ -645,7 +645,7 @@
   });
 
   // src/resident-scenes-card.js
-  var VERSION = "0.2.1";
+  var VERSION = "0.2.2";
   var WS = "resident_scenes";
   var HOUSE = "_house";
   var DOMAINS = ["light", "cover", "climate", "switch", "fan", "media_player", "scene"];
@@ -888,6 +888,10 @@
   };
   var TILE = { w: 640, h: 480 };
   var ResidentScenesCard = class extends i4 {
+    constructor() {
+      super(...arguments);
+      __publicField(this, "_editKey", Math.random().toString(36).slice(2));
+    }
     setConfig(config) {
       const cfg = { scope: "area", view: "manage", ...config };
       if (!["area", "house"].includes(cfg.scope)) throw new Error("scope must be area or house");
@@ -916,7 +920,7 @@
       this.hass?.connection.removeEventListener?.("ready", this._onReady);
       this._ro?.disconnect();
       this._unsubscribe();
-      this._endPreview(true);
+      setTimeout(() => this.isConnected || this._endPreview(true));
     }
     updated(changed) {
       if (changed.has("hass") && this.hass && !this._started && this.isConnected) this._start();
@@ -1573,10 +1577,11 @@
         const to = rows.findIndex((b3) => e5.clientY >= b3.top && e5.clientY < b3.bottom);
         if (to >= 0 && to !== this._dragTo) this._dragTo = to, this.requestUpdate();
       };
+      const cancel = () => (this._dragTo = null, end());
       const end = () => {
         handle.removeEventListener("pointermove", move);
         handle.removeEventListener("pointerup", end);
-        handle.removeEventListener("pointercancel", end);
+        handle.removeEventListener("pointercancel", cancel);
         const to = this._dragTo;
         this._dragTo = null;
         if (to != null && to !== from) this._moveTo(from, to);
@@ -1584,7 +1589,7 @@
       };
       handle.addEventListener("pointermove", move);
       handle.addEventListener("pointerup", end);
-      handle.addEventListener("pointercancel", end);
+      handle.addEventListener("pointercancel", cancel);
     }
     _pick(dev, on) {
       this._pickAll([dev], on);
@@ -1644,13 +1649,13 @@
       if (!this._edit?.preview || !["off", "set", "on"].includes(s4.choice)) return;
       const { delay, ...step } = this._stepPayload(key, s4);
       this._previewed = true;
-      this.hass.callWS({ type: `${WS}/preview`, step, ...this._house ? {} : { area_id: this._config.area } }).catch(() => {
+      this.hass.callWS({ type: `${WS}/preview`, step, edit: this._editKey, ...this._house ? {} : { area_id: this._config.area } }).catch(() => {
       });
     }
     _endPreview(restore) {
       if (!this._previewed) return;
       this._previewed = false;
-      this.hass.callWS({ type: `${WS}/preview_end`, restore }).catch(() => {
+      this.hass.callWS({ type: `${WS}/preview_end`, restore, edit: this._editKey }).catch(() => {
       });
     }
     _cancel() {
@@ -1717,6 +1722,7 @@
       }
     }
   };
+  // keeps the preview of each card apart (review T2)
   __publicField(ResidentScenesCard, "properties", {
     hass: { attribute: false },
     _data: { state: true },

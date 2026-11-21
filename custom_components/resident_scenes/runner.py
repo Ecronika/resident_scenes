@@ -49,6 +49,8 @@ class SceneRunner:
         self.entry = entry
         self.scenes = scenes
         self._scripts: dict[str, tuple[int, Script, list]] = {}
+        # context id -> scenes already started by that trigger; each runs once per trigger (review T1)
+        self._chains: dict[str | None, set[str]] = {}
         entry.async_on_unload(hass.bus.async_listen(EVENT_BATCH, self._batch))
         entry.async_on_unload(self._stop_all)
 
@@ -63,9 +65,16 @@ class SceneRunner:
         if entry := self._scripts.pop(scene_id, None):
             self.hass.async_create_task(entry[1].async_stop())
 
-    async def async_run(self, scene_id: str, context: Context | None) -> None:
+    async def async_run(self, scene_id: str, context: Context | None, called: bool = False) -> None:
         """Start a scene; a run of the same scene still going is cancelled."""
         scene = self.scenes[scene_id]
+        if not called:
+            key = context.id if context else None
+            self._chains.pop(key, None)
+            self._chains[key] = {scene_id}
+            # shortcut: keeps the chains of the last 100 triggers, enough for delays of running scenes
+            while len(self._chains) > 100:
+                del self._chains[next(iter(self._chains))]
         version, script, _ = self._scripts.get(scene_id, (None, None, None))
         if script is None or version != scene["version"]:
             if script is not None:
@@ -116,10 +125,15 @@ class SceneRunner:
         for step in steps:
             if "scene_id" in step:
                 target = ent_reg.async_get_entity_id("scene", DOMAIN, step["scene_id"])
+                chain = self._chains.setdefault(context.id if context else None, {scene["id"]})
                 if step["scene_id"] not in self.scenes or target is None:
                     skipped.append(step["name"])  # scene missing
+                elif step["scene_id"] in chain:
+                    _LOGGER.warning("Scene %s: %s already runs for this trigger, skipped", scene["name"], step["name"])
+                    skipped.append(step["name"])
                 else:
-                    jobs.append((step["name"], self.async_run(step["scene_id"], context)))
+                    chain.add(step["scene_id"])
+                    jobs.append((step["name"], self.async_run(step["scene_id"], context, called=True)))
                 continue
             entity_id = step["entity_id"]
             current = hass.states.get(entity_id)

@@ -49,7 +49,8 @@ view: manage       # manage (list and editor), list (run only) or favorites (fav
 `resident_scenes.capture` takes over the current state of every device of the target scenes, e.g. from an
 automation on a long press of a KNX push button. Targets may be scenes, areas, devices, labels or `all`. A device
 that is missing, unreachable, no longer released or moved to another room keeps its stored value, and called room
-scenes stay. Automations run without a user and are allowed.
+scenes stay. Every scene found takes over the same state: with an area or `all` as target, a scene "Dark" in that
+room afterwards switches the lights on as they are now. Automations run without a user and are allowed.
 
 ## Options
 

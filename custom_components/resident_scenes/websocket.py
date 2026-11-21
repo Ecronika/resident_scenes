@@ -356,8 +356,8 @@ def ws_subscribe(hass: HomeAssistant, connection: Connection, msg: dict[str, Any
 PREVIEW = f"{DOMAIN}_preview"  # key in connection.subscriptions, no message id can collide
 
 
-def _snapshots(hass: HomeAssistant, store: SceneStore, connection: Connection) -> dict[str, State]:
-    """Per connection (one editor): entity id -> state before its first preview.
+def _snapshots(hass: HomeAssistant, store: SceneStore, connection: Connection, edit: str) -> dict[str, State]:
+    """Per connection and edit (two cards on one page): entity id -> state before its first preview.
 
     A connection that closes during a preview counts as cancel (panel reloaded, app closed).
     """
@@ -366,12 +366,13 @@ def _snapshots(hass: HomeAssistant, store: SceneStore, connection: Connection) -
 
         @callback
         def closed() -> None:
-            if states := list(store.previews.pop(connection, {}).values()):
+            edits = store.previews.pop(connection, {}).values()
+            if states := [state for snapshots in edits for state in snapshots.values()]:
                 context = Context(user_id=connection.user.id)
                 hass.async_create_background_task(_restore(hass, store, states, context), f"{DOMAIN} preview")
 
         connection.subscriptions[PREVIEW] = closed
-    return store.previews[connection]
+    return store.previews[connection].setdefault(edit, {})
 
 
 async def _restore(hass: HomeAssistant, store: SceneStore, states: list[State], context: Context) -> None:
@@ -393,6 +394,7 @@ async def _restore(hass: HomeAssistant, store: SceneStore, states: list[State], 
         vol.Required("type"): f"{DOMAIN}/preview",
         vol.Required("step"): STEP_SCHEMA,
         vol.Optional("area_id"): vol.Any(str, None),
+        vol.Optional("edit", default=""): str,
     }
 )
 @websocket_api.async_response
@@ -412,7 +414,7 @@ async def ws_preview(hass: HomeAssistant, connection: Connection, msg: dict[str,
     except ValidationError as err:
         connection.send_error(msg["id"], err.code, str(err))
         return
-    snapshots = _snapshots(hass, store, connection)
+    snapshots = _snapshots(hass, store, connection, msg["edit"])
     eid = step["entity_id"]
     if eid not in snapshots and (current := hass.states.get(eid)):
         snapshots[eid] = current
@@ -429,14 +431,23 @@ async def ws_preview(hass: HomeAssistant, connection: Connection, msg: dict[str,
     connection.send_result(msg["id"])
 
 
-@websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/preview_end", vol.Required("restore"): bool})
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): f"{DOMAIN}/preview_end",
+        vol.Required("restore"): bool,
+        vol.Optional("edit", default=""): str,
+    }
+)
 @websocket_api.async_response
 async def ws_preview_end(hass: HomeAssistant, connection: Connection, msg: dict[str, Any]) -> None:
     """End the preview; on cancel the devices go back to their state from before editing."""
     if (store := _store(hass, connection, msg["id"])) is None:
         return
-    connection.subscriptions.pop(PREVIEW, None)
-    states = list(store.previews.pop(connection, {}).values())
+    edits = store.previews.get(connection, {})
+    states = list(edits.pop(msg["edit"], {}).values())
+    if not edits:
+        store.previews.pop(connection, None)
+        connection.subscriptions.pop(PREVIEW, None)
     if msg["restore"] and states:
         await _restore(hass, store, states, connection.context(msg))
     connection.send_result(msg["id"])

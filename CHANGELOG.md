@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.2.2
+
+Fixes from the review of 0.2.1 (T1 to T5).
+
+- A scene can no longer call itself. `copy_from` is accepted for new scenes only, a call to the scene's own id is
+  refused, and when running every scene runs at most once per trigger; a call that would repeat one is skipped and
+  named in the logbook (T1).
+- Live preview: each card keeps its own state before editing, also with two cards on one page (T2).
+- The card no longer ends the preview when Home Assistant only moves it within the page (T3).
+- A drag the browser cancels moves nothing (T4).
+- Uploads are decoded one after another (T5).
+- README: `capture` with an area or `all` gives every scene found the same state.
+
 ## 0.2.1
 
 Fixes from the review of 0.2.0 (S1 to S14).

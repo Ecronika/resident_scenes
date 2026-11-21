@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from datetime import timedelta
 import io
 import os
@@ -134,7 +135,8 @@ class SceneStore:
         self.images: list[str] = []
         self._signed: dict[str, tuple[str, float]] = {}
         self.runner: Any = None  # SceneRunner, set up after loading
-        self.previews: dict[Any, dict[str, Any]] = {}  # live preview per connection: states before editing
+        self._upload_lock = asyncio.Lock()  # one image decoded at a time, about 130 MB each (review T5)
+        self.previews: dict[Any, dict[str, Any]] = {}  # live preview per connection and edit: states before editing
 
     async def async_load(self) -> None:
         """Load scenes and favorite slots and scan the image library."""
@@ -256,7 +258,8 @@ class SceneStore:
             folder.mkdir(parents=True, exist_ok=True)
             (folder / upload_id).write_bytes(jpeg)
 
-        await self.hass.async_add_executor_job(write)
+        async with self._upload_lock:
+            await self.hass.async_add_executor_job(write)
         return UPLOAD_PREFIX + upload_id
 
     def _uploads_in_use(self) -> set[str]:
@@ -360,6 +363,8 @@ class SceneStore:
         transition = payload.get("transition")
         if transition is not None and not 0 <= transition <= MAX_TRANSITION:
             raise ValidationError("invalid_value", "transition")
+        if scene_id and payload.get("copy_from"):
+            raise ValidationError("invalid_value", "copy_from")  # a copy is always a new scene (review T1)
         base_id = payload.get("copy_from") or scene_id
         if base_id and base_id not in self.scenes:
             raise ValidationError("not_found")

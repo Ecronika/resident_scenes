@@ -322,7 +322,7 @@ def build_steps(
             # a stored call stays even if its target is gone or no room scene any more (like "keep")
             kept = base.get(f"scene:{scene_id}")
             # only house scenes call scenes, only room scenes are called: no cycles possible
-            if area_id or (kept is None and (target is None or target["area_id"] is None or scene_id == own_id)):
+            if area_id or scene_id == own_id or (kept is None and (target is None or target["area_id"] is None)):
                 raise ValidationError("invalid_scene_call", target["name"] if target else "")
             step: dict[str, Any] = {"scene_id": scene_id, "name": target["name"] if target else kept["name"]}
         elif "entity_id" not in raw:

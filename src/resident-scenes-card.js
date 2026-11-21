@@ -3,7 +3,7 @@
 import { LitElement, html, css, nothing } from "lit";
 import { live } from "lit/directives/live.js";
 
-const VERSION = "0.2.1"; // must match the integration (checked by tests)
+const VERSION = "0.2.2"; // must match the integration (checked by tests)
 const WS = "resident_scenes";
 const HOUSE = "_house";
 const DOMAINS = ["light", "cover", "climate", "switch", "fan", "media_player", "scene"];
@@ -95,6 +95,7 @@ const I18N = {
 const TILE = { w: 640, h: 480 }; // tile format of the design system, 4:3
 
 class ResidentScenesCard extends LitElement {
+  _editKey = Math.random().toString(36).slice(2); // keeps the preview of each card apart (review T2)
   static properties = {
     hass: { attribute: false },
     _data: { state: true },
@@ -139,7 +140,8 @@ class ResidentScenesCard extends LitElement {
     this.hass?.connection.removeEventListener?.("ready", this._onReady);
     this._ro?.disconnect();
     this._unsubscribe();
-    this._endPreview(true); // leaving the editor without saving counts as cancel (review S3)
+    // leaving the editor without saving counts as cancel (review S3); a card only moved in the page is back by then (T3)
+    setTimeout(() => this.isConnected || this._endPreview(true));
   }
 
   updated(changed) {
@@ -890,10 +892,11 @@ class ResidentScenesCard extends LitElement {
       const to = rows.findIndex((b) => e.clientY >= b.top && e.clientY < b.bottom);
       if (to >= 0 && to !== this._dragTo) (this._dragTo = to), this.requestUpdate();
     };
+    const cancel = () => ((this._dragTo = null), end()); // the browser took the gesture: nothing moves (review T4)
     const end = () => {
       handle.removeEventListener("pointermove", move);
       handle.removeEventListener("pointerup", end);
-      handle.removeEventListener("pointercancel", end);
+      handle.removeEventListener("pointercancel", cancel);
       const to = this._dragTo;
       this._dragTo = null;
       if (to != null && to !== from) this._moveTo(from, to);
@@ -901,7 +904,7 @@ class ResidentScenesCard extends LitElement {
     };
     handle.addEventListener("pointermove", move);
     handle.addEventListener("pointerup", end);
-    handle.addEventListener("pointercancel", end);
+    handle.addEventListener("pointercancel", cancel);
   }
 
   _pick(dev, on) {
@@ -965,14 +968,14 @@ class ResidentScenesCard extends LitElement {
     const { delay, ...step } = this._stepPayload(key, s);
     this._previewed = true;
     this.hass
-      .callWS({ type: `${WS}/preview`, step, ...(this._house ? {} : { area_id: this._config.area }) })
+      .callWS({ type: `${WS}/preview`, step, edit: this._editKey, ...(this._house ? {} : { area_id: this._config.area }) })
       .catch(() => {});
   }
 
   _endPreview(restore) {
     if (!this._previewed) return;
     this._previewed = false;
-    this.hass.callWS({ type: `${WS}/preview_end`, restore }).catch(() => {});
+    this.hass.callWS({ type: `${WS}/preview_end`, restore, edit: this._editKey }).catch(() => {});
   }
 
   _cancel() {
