@@ -4,15 +4,18 @@ Lets residents **without admin rights** create, edit, run and delete scenes from
 Scenes are stored by the integration (not in YAML), survive restarts, are part of every backup and appear as normal
 `scene` entities for automations, schedules and voice.
 
-Version 0.3 can:
+Requires Home Assistant 2026.3 or later. The card and the settings are available in English and German.
 
-- a scene editor where every input is saved at once, "Done" ends editing, "New scene"
-  creates a scene at once
+Features (version 0.4):
+
+- a scene editor in the card: every input is saved at once, "Done" ends editing, "New scene" creates a scene at once
 - a scene is a sequence of steps: a trade (light, shading, climate, switches, fans, music, scenes) with its ticked
   devices, a call of a room scene, or a delay; the same trade and the same device may appear in several steps
   ("light on, 5 s, light off")
 - devices from the current state, set to "off" or with values set directly (brightness, colour temperature, colour,
-  position, tilt, mode, temperature); a transition time; running a scene again restarts it
+  position, tilt, mode, temperature); lights with a white channel of their own also have the state "White"; a
+  setpoint is checked against the range and step of the thermostat; a transition time; running a scene again
+  restarts it
 - live adjustments per step for lights, shading, switches and fans: off on every opening, switching on takes over
   all devices of the step; leaving the editor restores nothing
 - "All off in the house" per trade in house scenes, sorting by dragging
@@ -26,7 +29,8 @@ Version 0.3 can:
   withdraw it per account in the card; panel accounts have no edit right by default
 - room rights per account: "All rooms" or a selection of rooms, and the right to run house scenes (default: all rooms,
   house scenes allowed)
-- undo of the last edit (all inputs from opening the editor to leaving it)
+- undo of the last edit (all inputs from opening the editor to leaving it, or until ten minutes without input); an
+  input that changes nothing is no edit
 - device release via a label; locks, alarm panels and configuration entities are never accepted
 - logbook entries for every change, attributed to the account; repair issues for missing devices and scenes.
   "scene created" is written once, under the first entity id (`scene.new_scene_1`); when the id then follows the name in
@@ -136,7 +140,8 @@ server without metadata (no location, no time) and stored in `.storage/resident_
 ## Removal
 
 Remove the integration under Settings → Devices & services. Stored scenes stay in `.storage/resident_scenes.data`
-until you delete that file.
+and uploaded images in `.storage/resident_scenes_images/` until you delete them. The label `resident_scenes` and the
+image library folder stay as well.
 
 ## Development
 
