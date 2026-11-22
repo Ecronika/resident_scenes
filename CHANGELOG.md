@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.3.1
+
+Fixes of the 0.3.0 review.
+
+- A deleted room no longer locks its scenes: its trade steps become steps without a room and stay changeable, also
+  after undo (W1).
+- House scenes take steps "Without room" for released devices that have no room (W2).
+- An edit belongs to one account and ends after 10 minutes without input, so every edit is in the logbook with its
+  account and undo never reaches back days (W3). The edit is stored with the scene and survives a restart (W5).
+- An input made while an image change checks its file is no longer lost (W4).
+- Inputs reach the disk within 10 seconds of the first unsaved input, also while editing goes on (W6).
+- Delays take whole seconds only; plus and minus count on from the value sent last (W7, V16).
+- Card: a step with more than two devices shows their count (V6); the mark of the selected scene is visible (V14);
+  questions take the focus on the safe answer, Escape gives that answer and the focus goes back (V15); every play
+  button names its scene (V17).
+
 ## 0.3.0
 
 Stage 3: a new scene editor (functional spec draft 0.8).

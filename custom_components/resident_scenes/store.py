@@ -67,6 +67,7 @@ MAX_PIXEL_SIDE = 4096  # refused before decoding (memory); the card uploads 640 
 CONTENT = ("name", "area_id", "image", "sequence", "transition")
 SAVE_DELAY = 10  # seconds; inputs come in bursts while editing, Home Assistant writes pending data on stop
 EDITS_KEPT = 20  # edit ids remembered per scene
+EDIT_IDLE = 600  # seconds; an edit ends after this long without input (review W3)
 LIVE_DOMAINS = frozenset({"light", "cover", "switch", "fan"})
 
 
@@ -160,7 +161,7 @@ class SceneStore:
         self._signed: dict[str, tuple[str, float]] = {}
         self.runner: Any = None  # SceneRunner, set up after loading
         self._upload_lock = asyncio.Lock()  # one image decoded at a time, about 130 MB each (review T5)
-        self._edits: dict[str, list[str]] = {}  # scene id -> edit ids already begun (in memory only)
+        self._save_since: float | None = None  # first input not yet on disk (review W6)
 
     async def async_load(self) -> None:
         """Load scenes and favorite slots and scan the image library."""
@@ -170,7 +171,10 @@ class SceneStore:
         await self.async_scan_images()
         # areas deleted while Home Assistant was stopped
         areas = ar.async_get(self.hass)
-        if gone := {s["area_id"] for s in self.scenes.values() if s["area_id"]} - set(areas.areas):
+        used = {s["area_id"] for s in self.scenes.values()} | {
+            g["area_id"] for s in self.scenes.values() for g in s["sequence"] if g["type"] == "group"
+        }
+        if gone := used - {None} - set(areas.areas):
             for area_id in gone:
                 self._move_to_house(area_id)
             await self._async_commit()
@@ -205,9 +209,20 @@ class SceneStore:
             await self._async_commit()
 
     def _move_to_house(self, area_id: str) -> bool:
-        """Scenes of a deleted area become house scenes; its favorite slots go."""
+        """Scenes of a deleted area become house scenes; its favorite slots go.
+
+        Group steps of the area become steps without a room, which stay changeable (review W1).
+        """
         moved = [s for s in self.scenes.values() if s["area_id"] == area_id]
         self.favorites.pop(area_id, None)
+        loose = False
+        for scene in self.scenes.values():
+            for step in scene["sequence"]:
+                if step["type"] == "group" and step["area_id"] == area_id:
+                    step["area_id"] = None
+                    loose = True
+                    if scene not in moved:
+                        scene["version"] += 1
         for scene in moved:
             scene["name"] = self._free_name(scene["name"], None, scene["id"])
             scene["area_id"] = None
@@ -215,7 +230,7 @@ class SceneStore:
             self.hass.bus.async_fire(
                 EVENT_CHANGED, {"scene_id": scene["id"], "name": scene["name"], "action": "moved to house"}
             )
-        return bool(moved)
+        return bool(moved) or loose
 
     def _free_name(self, name: str, area_id: str | None, own_id: str) -> str:
         """Return the name, with a suffix like ' (2)' if another scene of the area has it."""
@@ -373,11 +388,12 @@ class SceneStore:
             "changed_at": dt_util.utcnow().isoformat(),
             "previous": None,
             "entity_named": False,
+            "edits": [],
         }
 
     async def _async_add(self, scene: dict[str, Any], edit: str) -> dict[str, Any]:
         """Store a created scene; its creating edit has nothing to undo."""
-        self._edits[scene["id"]] = [edit]
+        scene["edits"] = [[edit, scene["changed_by"], dt_util.utcnow().timestamp()]]
         self.scenes[scene["id"]] = scene
         await self._async_commit()
         return scene
@@ -419,14 +435,10 @@ class SceneStore:
 
         Returns the changed scene, whether the input began an edit, and the command's result.
         """
-        scene = self.scenes.get(msg["scene_id"])
-        if scene is None:
-            raise ValidationError("not_found")
-        if not self.editable(scene, is_admin):
-            raise ValidationError("protected")
         command = msg["type"].rsplit("/", 1)[1]
         if command == "update":
-            await self._async_check_update(scene, msg, is_admin)
+            await self._async_check_update(self._editable(msg["scene_id"], is_admin), msg, is_admin)
+        scene = self._editable(msg["scene_id"], is_admin)  # again: inputs may have come during the check (W4)
         work = deepcopy(scene)
         result = getattr(self, f"_{command}")(work, msg, is_admin) or {}
         began = self._apply(scene, work, msg["edit"], user_id)
@@ -437,6 +449,14 @@ class SceneStore:
         else:
             self._changed()
         return work, began, result
+
+    def _editable(self, scene_id: str, is_admin: bool) -> dict[str, Any]:
+        scene = self.scenes.get(scene_id)
+        if scene is None:
+            raise ValidationError("not_found")
+        if not self.editable(scene, is_admin):
+            raise ValidationError("protected")
+        return scene
 
     def _check_size(self, before: list[dict[str, Any]], after: list[dict[str, Any]]) -> None:
         """Entries plus scene steps, and steps, stay within the limit (a lowered limit still allows shrinking)."""
@@ -449,13 +469,17 @@ class SceneStore:
             raise ValidationError("too_many_steps")
 
     def _apply(self, scene: dict[str, Any], work: dict[str, Any], edit: str, user_id: str | None) -> bool:
-        """Put the changed copy in place; an unknown edit id begins an edit (the state before can be undone)."""
+        """Put the changed copy in place; an unknown edit id begins an edit (the state before can be undone).
+
+        An edit id belongs to one account and ends after EDIT_IDLE seconds without input (review W3).
+        It is stored with the scene, so a restart does not begin a second edit (review W5).
+        """
         self._check_size(scene["sequence"], work["sequence"])
-        edits = self._edits.setdefault(scene["id"], [])
-        began = edit not in edits
+        now = dt_util.utcnow().timestamp()
+        edits = [e for e in scene.get("edits", []) if now - e[2] <= EDIT_IDLE and e[:2] != [edit, user_id]]
+        began = len(edits) == len([e for e in scene.get("edits", []) if now - e[2] <= EDIT_IDLE])
+        work["edits"] = [*edits, [edit, user_id, now]][-EDITS_KEPT:]
         if began:
-            edits.append(edit)
-            del edits[:-EDITS_KEPT]
             work["previous"] = {k: scene[k] for k in CONTENT}
         work.update(version=scene["version"] + 1, changed_by=user_id, changed_at=dt_util.utcnow().isoformat())
         self.scenes[scene["id"]] = work
@@ -522,7 +546,7 @@ class SceneStore:
             area_id = work["area_id"] or msg.get("area_id")  # in a room scene always the room
             if msg.get("domain") not in ALLOWED_DOMAINS:
                 raise ValidationError("invalid_step")
-            if area_id is None or ar.async_get(self.hass).async_get_area(area_id) is None:
+            if area_id is not None and ar.async_get(self.hass).async_get_area(area_id) is None:  # None: no room (W2)
                 raise ValidationError("invalid_area")
             step |= {"domain": msg["domain"], "area_id": area_id, "entries": []}
         elif kind == "scene":
@@ -546,9 +570,10 @@ class SceneStore:
 
     def _set_delay(self, work: dict[str, Any], msg: dict[str, Any], is_admin: bool = False) -> None:
         step = self._step(work, msg["step_id"], "delay")
-        if not 0 < msg["seconds"] <= int(opt(self.entry, CONF_MAX_DELAY)):
-            raise ValidationError("invalid_delay")
-        step["seconds"] = msg["seconds"]
+        seconds = msg["seconds"]
+        if seconds != int(seconds) or not 0 < seconds <= int(opt(self.entry, CONF_MAX_DELAY)):
+            raise ValidationError("invalid_delay")  # whole seconds, like plus and minus (V16)
+        step["seconds"] = int(seconds)
 
     def _remove_step(self, work: dict[str, Any], msg: dict[str, Any], is_admin: bool) -> None:
         work["sequence"].remove(self._find(work, msg["step_id"]))
@@ -649,8 +674,14 @@ class SceneStore:
             # residents take back only content; name, area and image stay the installer's (spec 2)
             previous = {k: v for k, v in previous.items() if k in ("sequence", "transition")}
             previous |= {k: scene[k] for k in ("name", "area_id", "image")}
-        if previous["area_id"] and ar.async_get(self.hass).async_get_area(previous["area_id"]) is None:
+        areas = ar.async_get(self.hass)
+        if previous["area_id"] and areas.async_get_area(previous["area_id"]) is None:
             previous["area_id"] = None
+        if "sequence" in previous:
+            previous["sequence"] = deepcopy(previous["sequence"])
+            for step in previous["sequence"]:  # rooms deleted since: steps without a room (W1)
+                if step["type"] == "group" and step["area_id"] and areas.async_get_area(step["area_id"]) is None:
+                    step["area_id"] = None
         if previous["area_id"] != scene["area_id"]:
             self._clear_favorites(scene_id)
         previous["name"] = self._free_name(previous["name"], previous["area_id"], scene_id)
@@ -694,7 +725,6 @@ class SceneStore:
         if scene["kind"] == KIND_INSTALLER and not is_admin:
             raise ValidationError("protected")
         del self.scenes[scene_id]
-        self._edits.pop(scene_id, None)
         self._clear_favorites(scene_id)
         if self.runner is not None:
             self.runner.async_forget(scene_id)
@@ -784,12 +814,22 @@ class SceneStore:
 
     @callback
     def async_save_later(self) -> None:
-        """Write within SAVE_DELAY seconds (or on stop)."""
-        self._store.async_delay_save(self._data, SAVE_DELAY)
+        """Write within SAVE_DELAY seconds of the first unwritten input (or on stop).
+
+        Home Assistant moves a delayed save with every call; the delay counts from the first one (review W6).
+        """
+        now = self.hass.loop.time()
+        if self._save_since is None:
+            self._save_since = now
+        self._store.async_delay_save(self._written, max(0, SAVE_DELAY - (now - self._save_since)))
+
+    def _written(self) -> dict[str, Any]:
+        self._save_since = None
+        return self._data()
 
     async def async_write(self) -> None:
         """Write now, also what waits for the delayed save (on unload)."""
-        await self._store.async_save(self._data())
+        await self._store.async_save(self._written())
 
     async def _async_commit(self) -> None:
         await self.async_write()

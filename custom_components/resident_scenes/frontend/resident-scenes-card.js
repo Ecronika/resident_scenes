@@ -731,7 +731,7 @@
   });
 
   // src/resident-scenes-card.js
-  var VERSION = "0.3.0";
+  var VERSION = "0.3.1";
   var WS = "resident_scenes";
   var HOUSE = "_house";
   var DOMAINS = ["light", "cover", "climate", "switch", "fan", "media_player", "scene"];
@@ -795,6 +795,8 @@
       reload: "A new version is installed. Please reload.",
       reload_btn: "Reload",
       house: "House",
+      no_room: "No room",
+      devices_n: "devices",
       installer: "Installer",
       protected: "Installer scene (protected)",
       released: "Content released to residents",
@@ -917,6 +919,8 @@
       reload: "Eine neue Version ist installiert. Bitte neu laden.",
       reload_btn: "Neu laden",
       house: "Haus",
+      no_room: "Ohne Raum",
+      devices_n: "Ger\xE4te",
       installer: "Errichter",
       protected: "Errichterszene (gesch\xFCtzt)",
       released: "Inhalt f\xFCr Bewohner freigegeben",
@@ -1034,6 +1038,20 @@
         this._focusStep = null;
         this.renderRoot.querySelector(`[data-action="drag"][data-id="${f3.id}"]`)?.focus();
       }
+      const dialog = this.renderRoot.querySelector(".dialog");
+      if (dialog && dialog !== this._dialog) {
+        this._opener = this.renderRoot.activeElement;
+        dialog.querySelector("[data-safe]")?.focus();
+      } else if (!dialog && this._dialog) {
+        if (this._opener?.isConnected) this._opener.focus();
+        this._opener = null;
+      }
+      this._dialog = dialog;
+    }
+    _escape(ev) {
+      if (ev.key !== "Escape") return;
+      ev.stopPropagation();
+      this.renderRoot.querySelector(".dialog [data-safe]")?.click();
     }
     _start() {
       this._started = true;
@@ -1192,9 +1210,9 @@
       if (this._narrow) return detail;
       return b2`<div class="columns"><div class="col-list">${list}</div><div class="col-detail">${detail}</div></div>`;
     }
-    _playButton(eid, label = false) {
+    _playButton(eid, label = false, name = "") {
       const done = this._played === eid;
-      return b2`<button class=${label ? "primary" : "icon"} data-action="play" aria-label=${this._t("play")}
+      return b2`<button class=${label ? "primary" : "icon"} data-action="play" aria-label=${name ? `${this._t("play")}: ${name}` : this._t("play")}
       @click=${() => this._play(eid)}>${done ? "\u2713" : "\u25B6"}${label ? ` ${this._t(done ? "played" : "play")}` : ""}</button>`;
     }
     _renderList() {
@@ -1208,7 +1226,7 @@
       ${s5.image_url ? b2`<img class="thumb" src=${s5.image_url} alt="" />` : b2`<span class="thumb">${PLACEHOLDER}</span>`}
       ${manage ? b2`<button class="name link" data-action="select" data-id=${s5.id} @click=${() => this._select(s5.id)}>${s5.name}</button>` : b2`<span class="name">${s5.name}</span>`}
       ${s5.kind === "installer" ? b2`<span class="badge">${this._t("installer")}</span>` : A}
-      ${this._playButton(s5.entity_id)}
+      ${this._playButton(s5.entity_id, false, s5.name)}
     </div>`;
       return b2`
       ${canEdit ? b2`<button class="primary wide" data-action="new" ?disabled=${full} @click=${this._create}>
@@ -1222,7 +1240,7 @@
             ${d3.foreign_scenes.map(
         (s5) => b2`<div class="row"><span class="thumb">${PLACEHOLDER}</span>
                 <span class="name">${this._name(s5.entity_id, s5.name)}${s5.knx ? b2`<span class="badge">KNX</span>` : A}</span>
-                ${this._playButton(s5.entity_id)}</div>`
+                ${this._playButton(s5.entity_id, false, this._name(s5.entity_id, s5.name))}</div>`
       )}` : A}
     `;
     }
@@ -1258,7 +1276,7 @@
       ${this._slots ? this._renderSlots() : A}`;
     }
     _stepTitle(step) {
-      const room = this._house ? `${this._areaName(step.area_id)} \u2013 ` : "";
+      const room = !this._house ? "" : `${step.area_id ? this._areaName(step.area_id) : this._t("no_room")} \u2013 `;
       return room + this._t(step.type === "scene" ? "scene" : step.domain);
     }
     // one line per step: "Küche – Licht: Decke 60 %, Wand Aus", "Küche – Szenen: Kochen", "+ 5 s" (spec 5.2)
@@ -1267,7 +1285,7 @@
       if (step.type === "delay") return b2`<span class="name">+ ${this._num(step.seconds)} s</span>`;
       if (step.type === "scene") return b2`<span class="name">${this._stepTitle(step)}: ${step.name}${badge(step.issue)}</span>`;
       return b2`<span class="name">${this._stepTitle(step)}:
-      ${step.entries.length ? step.entries.map((e5, i7) => b2`${i7 ? ", " : ""}${this._name(e5.entity_id, e5.name)} ${this._summary(e5)}${badge(e5.issue)}`) : "\u2013"}</span>`;
+      ${step.entries.length > 2 ? b2`${step.entries.length} ${this._t("devices_n")}${badge(step.entries.find((e5) => e5.issue)?.issue)}` : step.entries.length ? step.entries.map((e5, i7) => b2`${i7 ? ", " : ""}${this._name(e5.entity_id, e5.name)} ${this._summary(e5)}${badge(e5.issue)}`) : "\u2013"}</span>`;
     }
     _summary(entry) {
       const pct = (v3) => `${Math.round(v3 * 100)} %`;
@@ -1292,17 +1310,17 @@
       const d3 = this._data;
       const current = d3.favorites.indexOf(this._detail.id);
       const ask = this._slots.ask;
-      return b2`<div class="overlay"><div class="dialog" role="dialog" aria-label=${this._t("favorites")}>
+      return b2`<div class="overlay" @keydown=${this._escape}><div class="dialog" role="dialog" aria-modal="true" aria-label=${this._t("favorites")}>
       ${ask != null ? b2`<p>${this._t("slot")} ${ask + 1}: ${this._scene(d3.favorites[ask])?.name} ${this._t("loses")}</p>
             <div class="actions">
               <button class="primary" data-action="slot-confirm" @click=${() => this._setFavorite(ask, true)}>${this._t("replace")}</button>
-              <button data-action="slot-cancel" @click=${() => this._slots = {}}>${this._t("cancel")}</button></div>` : b2`<h3>${this._t("favorites")}</h3>
+              <button data-action="slot-cancel" data-safe @click=${() => this._slots = {}}>${this._t("cancel")}</button></div>` : b2`<h3>${this._t("favorites")}</h3>
             ${d3.favorites.map(
         (id, i7) => b2`<button class="wide" data-action="slot" data-slot=${i7} aria-pressed=${i7 === current ? "true" : "false"}
                 @click=${() => this._setFavorite(i7)}>${this._t("slot")} ${i7 + 1} – ${id ? this._scene(id)?.name ?? "" : this._t("free")}</button>`
       )}
             ${current >= 0 ? b2`<button class="wide" data-action="slot-clear" @click=${() => this._setFavorite(null)}>${this._t("no_slot")}</button>` : A}
-            <button class="wide" data-action="slot-close" @click=${() => this._slots = null}>${this._t("close")}</button>`}
+            <button class="wide" data-action="slot-close" data-safe @click=${() => this._slots = null}>${this._t("close")}</button>`}
     </div></div>`;
     }
     async _setFavorite(slot, confirmed = false) {
@@ -1505,16 +1523,24 @@
       if (step.type === "delay") {
         const max = this._data.max_delay;
         const key = `delay:${step.id}`;
-        const set = (seconds) => this._send("set_delay", { step_id: step.id, seconds });
+        const base = () => {
+          const sent = this._delaySent?.[step.id];
+          return sent && Date.now() - sent.at < 2e3 ? sent.seconds : step.seconds;
+        };
+        const set = (seconds) => {
+          if (!(seconds >= 1 && seconds <= max)) return;
+          (this._delaySent ??= {})[step.id] = { seconds, at: Date.now() };
+          this._send("set_delay", { step_id: step.id, seconds });
+        };
         return b2`<div class=${cls}>${handle}
         <div class="delay">
-          <button class="icon" data-action="delay-minus" aria-label="−1 s" ?disabled=${step.seconds <= 1}
-            @click=${() => set(step.seconds - 1)}>−</button>
-          <label class="plain">+ <input type="number" min="1" max=${max} step="1" inputmode="numeric" data-field="delay"
+          <button class="icon" data-action="delay-minus" aria-label="−1 s" ?disabled=${base() <= 1}
+            @click=${() => set(base() - 1)}>−</button>
+          <label class="plain">+ <input class="secs" inputmode="numeric" pattern="[0-9]*" maxlength="3" data-field="delay"
             data-key=${key} aria-label=${this._t("seconds")} .value=${l3(String(this._draft(key, step.seconds)))}
-            @input=${this._keep(key)} @change=${(ev) => set(Number(ev.target.value))} /> s</label>
-          <button class="icon" data-action="delay-plus" aria-label="+1 s" ?disabled=${step.seconds >= max}
-            @click=${() => set(step.seconds + 1)}>+</button>
+            @input=${this._keep(key)} @change=${(ev) => set(Math.round(Number(ev.target.value)))} /> s</label>
+          <button class="icon" data-action="delay-plus" aria-label="+1 s" ?disabled=${base() >= max}
+            @click=${() => set(base() + 1)}>+</button>
         </div>${remove}</div>`;
       }
       return b2`<div class=${cls}>${handle}${this._stepLine(step)}
@@ -1566,9 +1592,10 @@
       const close = b2`<button data-action="add-cancel" @click=${() => this._setEdit({ adding: null })}>${this._t("cancel")}</button>`;
       if (this._house && a3.area === void 0) {
         const areas = [...new Set([...e5.devices.map((d3) => d3.area_id), ...e5.room_scenes.map((r5) => r5.area_id)].filter(Boolean))].sort((x2, y3) => this._areaName(x2).localeCompare(this._areaName(y3)));
+        if (e5.devices.some((d3) => d3.area_id == null && d3.released !== false)) areas.push(null);
         return b2`<div class="pick"><h3>${this._t("pick_room")}</h3>
-        ${areas.map((id) => b2`<button data-action="pick-room" data-id=${id} @click=${() => this._setEdit({ adding: { area: id } })}>
-          ${this._areaName(id)}</button>`)}${close}</div>`;
+        ${areas.map((id) => b2`<button data-action="pick-room" data-id=${id ?? ""} @click=${() => this._setEdit({ adding: { area: id } })}>
+          ${id ? this._areaName(id) : this._t("no_room")}</button>`)}${close}</div>`;
       }
       const area = this._house ? a3.area : this._config.area;
       const extra = this._house ? { area_id: area } : {};
@@ -1581,7 +1608,7 @@
       }
       const domains = DOMAINS.filter((dm) => e5.devices.some((d3) => d3.domain === dm && d3.area_id === area && d3.released !== false));
       const roomScenes = this._house && e5.room_scenes.some((r5) => r5.area_id === area);
-      return b2`<div class="pick"><h3>${this._house ? `${this._areaName(area)} \u2013 ` : ""}${this._t("pick_domain")}</h3>
+      return b2`<div class="pick"><h3>${this._house ? `${area ? this._areaName(area) : this._t("no_room")} \u2013 ` : ""}${this._t("pick_domain")}</h3>
       ${domains.map((dm) => b2`<button data-action="pick-domain" data-domain=${dm}
         @click=${() => this._addStep({ step_type: "group", domain: dm, ...extra })}>${this._t(dm === "scene" ? "other_scenes" : dm)}</button>`)}
       ${roomScenes ? b2`<button data-action="pick-domain" data-domain="room_scene" @click=${() => this._setEdit({ adding: { area, scenes: true } })}>
@@ -1813,12 +1840,12 @@
         return `${this._areaName(scope === HOUSE ? null : scope)} ${this._t("slot")} ${n4}`;
       });
       const all = [...used.scenes, ...slots];
-      return b2`<div class="overlay"><div class="dialog" role="alertdialog">${this._t("confirm_delete")}
+      return b2`<div class="overlay" @keydown=${this._escape}><div class="dialog" role="alertdialog" aria-modal="true">${this._t("confirm_delete")}
       ${all.length ? b2`<br />${this._t("used_on")} ${all.join(", ")}` : A}
       <br /><span class="muted">${this._t("outside_note")}</span>
       <div class="actions">
         <button class="danger" data-action="delete" @click=${this._delete}>${this._t("yes")}</button>
-        <button data-action="keep-scene" @click=${() => this._setEdit({ confirmDelete: false })}>${this._t("no")}</button>
+        <button data-action="keep-scene" data-safe @click=${() => this._setEdit({ confirmDelete: false })}>${this._t("no")}</button>
       </div></div></div>`;
     }
     async _delete() {
@@ -1864,7 +1891,7 @@
     input[type=number] { width: 7em; }
     input[type=range] { width: 100%; min-height: 44px; margin: 0; accent-color: var(--primary-color); }
     .row { display: flex; align-items: center; gap: 8px; min-height: 48px; border-bottom: 1px solid var(--divider-color); flex-wrap: wrap; }
-    .row.selected { background: var(--secondary-background-color); box-shadow: inset 4px 0 var(--primary-color); }
+    .row.selected { background: var(--secondary-background-color); border-left: 4px solid var(--primary-color); padding-left: 4px; }
     .row.selected .name { color: var(--primary-color); font-weight: 500; }
     .row .name { flex: 1; min-width: 0; overflow-wrap: anywhere; }
     .thumb { width: 40px; height: 40px; border-radius: 6px; object-fit: cover; background: var(--secondary-background-color); flex: none;
@@ -1876,6 +1903,7 @@
     .bar { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; } .bar .name { flex: 1; min-width: 0; margin: 0; }
     .field { display: flex; flex-direction: column; gap: 4px; margin: 8px 0; }
     .actions, .pick, .tools, .delay, .controls, .seg { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+    .secs { width: 4ch; text-align: center; }
     .actions { margin-top: 16px; } .pick { margin: 8px 0; }
     .controls { flex: 1 1 100%; padding-bottom: 8px; }
     .seg button[aria-checked=true] { background: var(--primary-color); color: var(--text-primary-color, #fff); border-color: var(--primary-color); }

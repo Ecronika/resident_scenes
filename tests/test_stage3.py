@@ -198,7 +198,6 @@ async def test_step_commands(hass, setup, hass_ws_client, resident_token, hass_a
     assert [s["type"] for s in seq()] == ["delay", "group"] and seq()[0]["seconds"] == 5
     for fields, code in (
         ({"step_type": "group", "domain": "light", "area_id": "nowhere"}, "invalid_area"),
-        ({"step_type": "group", "domain": "light"}, "invalid_area"),  # a house step needs a room
         ({"step_type": "group", "area_id": "kitchen"}, "invalid_step"),
         ({"step_type": "scene", "target": "nope"}, "invalid_scene_call"),
     ):
@@ -207,7 +206,7 @@ async def test_step_commands(hass, setup, hass_ws_client, resident_token, hass_a
     assert (await call(**_cmd("set_delay", sid, step_id=delay, seconds=601)))["error"]["code"] == "invalid_delay"
     res = await call(**_cmd("set_delay", sid, step_id=first["step_id"], seconds=3))
     assert res["error"]["code"] == "invalid_step"
-    assert (await call(**_cmd("set_delay", sid, step_id=delay, seconds=2.5)))["success"]
+    assert (await call(**_cmd("set_delay", sid, step_id=delay, seconds=2.5)))["error"]["code"] == "invalid_delay"
     assert (await call(**_cmd("move_step", sid, step_id=delay, index=99)))["success"]
     assert [s["type"] for s in seq()] == ["group", "delay"]
     assert (await call(**_cmd("move_step", sid, step_id="gone", index=0)))["error"]["code"] == "step_missing"
