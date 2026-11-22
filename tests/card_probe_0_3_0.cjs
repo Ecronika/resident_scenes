@@ -118,7 +118,7 @@ const sent = (s, type) => s.calls.filter((c) => c.type === `resident_scenes/${ty
     assert.ok(!names.has("preview") && !names.has("preview_end") && !names.has("save")); // OK: the old commands are gone
   }
 
-  // ---------- music: every favorite is a button of its own ----------
+  // ---------- music: the favorites are one list (draft 0.9, 5.2) ----------
   {
     const s = world({ lang: "de" });
     s.devices.push({ entity_id: "media_player.r0", name: "Sonos", domain: "media_player", area_id: "r0", available: true,
@@ -139,8 +139,8 @@ const sent = (s, type) => s.calls.filter((c) => c.type === `resident_scenes/${ty
     s.notify({ changed: true });
     await tick();
     await click(root, '[data-action="open"][data-id="m1"]');
-    const buttons = root.querySelectorAll('[data-field="favorite_id"] button');
-    assert.strictEqual(buttons.length, 40); // NOTE: 40 favorites are 40 buttons in the row of one player
+    assert.strictEqual(root.querySelectorAll('[data-field="favorite_id"] button').length, 0); // FIXED (0.3.2): no button each
+    assert.strictEqual(root.querySelectorAll('select[data-field="favorite_id"] option').length, 40);
     assert.ok(!q(root, '[data-field="live"]'), "no live adjustments for music"); // OK (5.4)
     assert.ok(!q(root, '.row.device [data-action="play"]'), "no play button at the favorite"); // OK
     card.remove();

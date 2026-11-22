@@ -83,8 +83,14 @@ function world({ lang = "de" } = {}) {
     },
     set_entry: (m) => {
       const g = step(m.step_id);
+      // like the server: an input keeps the other stored values; a new colour or white replaces the old one (X11)
+      const prev = g.entries.find((e) => e.entity_id === m.entity_id);
+      const kept = { ...(prev?.state === "on" ? prev.attributes : {}) };
+      if (m.mode === "set" && ("hue" in m.values || "color_temp_kelvin" in m.values)) {
+        for (const k of ["color_mode", "hs_color", "rgb_color", "rgbw_color", "rgbww_color", "xy_color", "color_temp_kelvin"]) delete kept[k];
+      }
       const entry = { entity_id: m.entity_id, state: m.mode === "off" ? "off" : "on",
-        attributes: m.mode === "set" ? stored(m.values) : { brightness: 128 }, issue: null, name: m.entity_id };
+        attributes: m.mode === "set" ? { ...kept, ...stored(m.values) } : { brightness: 128 }, issue: null, name: m.entity_id };
       g.entries = [...g.entries.filter((e) => e.entity_id !== m.entity_id), entry];
     },
     remove_entry: (m) => { const g = step(m.step_id); g.entries = g.entries.filter((e) => e.entity_id !== m.entity_id); },

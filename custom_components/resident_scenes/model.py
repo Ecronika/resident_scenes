@@ -11,6 +11,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr, entity_registry as er
+from homeassistant.util import color as color_util
 
 from .const import (
     ALLOWED_DOMAINS,
@@ -149,12 +150,26 @@ def step_issue(
         return "missing"
     if eid not in allowed:
         return "not_released"
-    if area_id and entity_area(hass, allowed[eid]) != area_id:
+    if entity_area(hass, allowed[eid]) != area_id:  # a step without a room takes devices without a room (X3)
         return "other_area"
     if state is None or state.state == STATE_UNAVAILABLE:
         return "unavailable"
     if step.get("music") == "favorite" and step["favorite_id"] not in favorites:
         return "favorite_missing"
+    return None
+
+
+def light_hs(attrs: dict[str, Any]) -> list[float] | None:
+    """Return hue and saturation of a stored light colour in rgb, rgbw, rgbww or xy form (review X11)."""
+    if rgb := attrs.get("rgb_color"):
+        return list(color_util.color_RGB_to_hs(*rgb))
+    if rgbw := attrs.get("rgbw_color"):
+        return list(color_util.color_RGB_to_hs(*color_util.color_rgbw_to_rgb(*rgbw)))
+    if rgbww := attrs.get("rgbww_color"):
+        # shortcut: the hue of the colour channels only; the white channels stay stored and run as captured
+        return list(color_util.color_RGB_to_hs(*rgbww[:3]))
+    if xy := attrs.get("xy_color"):
+        return list(color_util.color_xy_to_hs(*xy))
     return None
 
 
@@ -214,12 +229,17 @@ def _number(values: dict[str, Any], key: str, low: float, high: float) -> float 
     return value
 
 
-def _set_step(hass: HomeAssistant, entity_id: str, values: dict[str, Any]) -> dict[str, Any]:
+def _set_step(
+    hass: HomeAssistant, entity_id: str, values: dict[str, Any], stored: dict[str, Any] | None
+) -> dict[str, Any]:
     """Build a step from values set directly in the editor, checked against the device."""
     domain = entity_id.split(".", 1)[0]
     current = hass.states.get(entity_id)
     attrs = current.attributes if current else {}
     if domain == "light":
+        # an input changes only its own value: the rest comes from the stored entry, else the current state (X11)
+        base = stored or _capture(hass, entity_id, {}) or {}
+        kept = base.get("attributes", {}) if base.get("state") == "on" else {}
         brightness = _number(values, "brightness", 1, 255)
         kelvin = _number(
             values,
@@ -229,11 +249,13 @@ def _set_step(hass: HomeAssistant, entity_id: str, values: dict[str, Any]) -> di
         )
         hue = _number(values, "hue", 0, 360)
         saturation = _number(values, "saturation", 0, 100)
-        result: dict[str, Any] = {"brightness": int(brightness or 255)}
+        result: dict[str, Any] = {"brightness": int(brightness or kept.get("brightness") or 255)}
         if kelvin is not None:
             result |= {"color_mode": "color_temp", "color_temp_kelvin": int(kelvin)}
         elif hue is not None:
             result |= {"color_mode": "hs", "hs_color": [hue, 100 if saturation is None else saturation]}
+        elif (attr := LIGHT_COLOR_ATTR.get(kept.get("color_mode"))) in kept:
+            result |= {"color_mode": kept["color_mode"], attr: kept[attr]}
         return {"entity_id": entity_id, "state": "on", "attributes": result}
     if domain == "cover":
         position = _number(values, "position", 0, 100)
@@ -271,12 +293,13 @@ def build_step(
     allowed: dict[str, er.RegistryEntry],
     favorites: dict[str, str],
     area_id: str | None,
+    stored: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Resolve one requested device step (modes capture, off, set, music)."""
+    """Resolve one requested device step (modes capture, off, set, music); ``stored`` is the entry it replaces."""
     entity_id = raw["entity_id"]
     domain = entity_id.split(".", 1)[0]
     mode = raw["mode"]
-    if entity_id not in allowed or (area_id and entity_area(hass, allowed[entity_id]) != area_id):
+    if entity_id not in allowed or entity_area(hass, allowed[entity_id]) != area_id:
         raise ValidationError("entity_not_allowed", entity_id)
     if mode == "capture":
         if (step := _capture(hass, entity_id, favorites)) is None:
@@ -287,7 +310,7 @@ def build_step(
     if mode == "off" and domain in OFF_STATE:
         return {"entity_id": entity_id, "state": OFF_STATE[domain], "attributes": {}}
     if mode == "set" and domain in OFF_STATE:
-        return _set_step(hass, entity_id, raw.get("values") or {})
+        return _set_step(hass, entity_id, raw.get("values") or {}, stored)
     if mode == "music" and domain == "media_player" and (step := _music_step(hass, entity_id, raw, favorites)):
         return step
     raise ValidationError("invalid_step", entity_id)

@@ -106,7 +106,7 @@ const scene = (sequence, extra = {}) => ({ id: "s1", name: "Abend", area_id: "r2
     assert.ok(field("brightness") && field("light_mode") && field("hue") && field("saturation"), "unticked shows the current state");
     await click(root, '[data-field="light_mode"][data-entity="light.r2_0"] [data-value="white"]');
     const msg = last(s, "set_entry");
-    assert.deepStrictEqual(JSON.parse(JSON.stringify(msg.values)), { brightness: 128, color_temp_kelvin: 2000 }, "only one of them is sent");
+    assert.deepStrictEqual(JSON.parse(JSON.stringify(msg.values)), { color_temp_kelvin: 2000 }, "only one of them is sent, the brightness stays on the server (X11)");
     assert.strictEqual(msg.mode, "set");
     assert.strictEqual(q(root, '[data-field="pick"][data-entity="light.r2_0"]').getAttribute("aria-checked"), "true", "an input ticks the device");
     assert.ok(field("color_temp_kelvin") && !field("hue"), "white mode");

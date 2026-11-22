@@ -8,7 +8,7 @@ const { w, tick, fire, setValue, same, world, make, types, last, q, click } = re
   const card = await make(s, { scope: "house", view: "manage" });
   const root = card.shadowRoot;
   assert.strictEqual(s.calls[0].scope, "_house", "the list is asked for the card scope only");
-  same(card.getGridOptions(), { columns: 12, min_columns: 6, rows: "auto" }, "V1: full width in sections view");
+  same(card.getGridOptions(), { columns: "full", min_columns: 6, rows: "auto" }, "V1, X2: full width in sections view");
 
   // "New scene" creates at once and opens edit mode, no form to save
   await click(root, '[data-action="new"]');
@@ -74,7 +74,7 @@ const { w, tick, fire, setValue, same, world, make, types, last, q, click } = re
   fire(slider, "change");
   await tick();
   same(last(s, "set_entry"), { type: "resident_scenes/set_entry", scene_id: "n1", edit: create.edit, step_id: "st1",
-    entity_id: "light.r0_1", live: true, mode: "set", values: { brightness: 153, hue: 30, saturation: 80 } });
+    entity_id: "light.r0_1", live: true, mode: "set", values: { brightness: 153 } }); // the colour stays on the server (X11)
   await click(root, '[data-action="all-off"]');
   same(last(s, "set_all"), { type: "resident_scenes/set_all", scene_id: "n1", edit: create.edit, step_id: "st1", mode: "off", live: true });
 
@@ -93,7 +93,7 @@ const { w, tick, fire, setValue, same, world, make, types, last, q, click } = re
   await click(root, '[data-action="pick-domain"][data-domain="room_scene"]');
   await click(root, '[data-action="pick-scene"][data-id="rs1"]');
   same(last(s, "add_step"), { type: "resident_scenes/add_step", scene_id: "n1", edit: create.edit, step_type: "scene", target: "rs1", area_id: "r1" });
-  assert.ok(root.textContent.includes("r1 – Scenes: Kochen"), "scene step in short form");
+  assert.match(root.textContent, /r1 – Scenes\s+Kochen/, "scene step in short form, two lines (spec 5.2)");
 
   // delay: starts at 5 s, plus, minus, direct input
   await click(root, '[data-action="add-delay"]');

@@ -150,11 +150,11 @@ async def test_edits_and_undo(hass, setup, hass_ws_client, resident_token):
     assert (store.scenes[sid]["transition"], store.scenes[sid]["sequence"], store.scenes[sid]["name"]) == (
         None, [], "Cook"
     )
-    # the same edit goes on without a new logbook entry and without anything to undo
+    # undo ends the edit: the next input of the open editor begins a new one, logged and undoable (review X9)
     assert (await call(**_cmd("update", sid, "b", transition=1)))["success"]
     await hass.async_block_till_done()
-    assert [c.data["action"] for c in changes] == ["created", "changed", "change taken back"]
-    assert store.scenes[sid]["previous"] is None
+    assert [c.data["action"] for c in changes] == ["created", "changed", "change taken back", "changed"]
+    assert store.scenes[sid]["previous"]["transition"] is None
 
 
 async def test_create_and_duplicate(hass, setup, hass_ws_client, resident_token):
@@ -334,7 +334,7 @@ async def test_entity_id_after_the_first_rename(hass, setup, hass_ws_client, res
     sid = (await call(type=f"{DOMAIN}/create", area_id=None, name="New", edit="x"))["result"]["scene_id"]
     await hass.async_block_till_done()
     assert eid(hass, sid) == "scene.new_1"
-    assert (await call(**_cmd("update", sid, name="Brunch")))["success"]
+    assert (await call(**_cmd("update", sid, "x", name="Brunch")))["success"]  # in the creating edit (spec 4.3)
     await hass.async_block_till_done()
     assert eid(hass, sid) == "scene.brunch"
     assert hass.states.get("scene.brunch").name == "Brunch"
@@ -343,10 +343,11 @@ async def test_entity_id_after_the_first_rename(hass, setup, hass_ws_client, res
     await hass.async_block_till_done()
     er.async_get(hass).async_update_entity(eid(hass, other), new_entity_id="scene.mine")
     await hass.async_block_till_done()
-    assert (await call(**_cmd("update", other, name="Lunch")))["success"]
+    assert (await call(**_cmd("update", other, "x", name="Lunch")))["success"]
     await hass.async_block_till_done()
     assert eid(hass, other) == "scene.mine"  # changed by hand: left alone
-    assert setup.runtime_data.scenes[other]["entity_named"] is True
+    assert (await call(**_cmd("update", other, "y", name="Dinner")))["success"]  # a later edit ends the creating one
+    assert eid(hass, other) == "scene.mine" and setup.runtime_data.scenes[other]["entity_named"] is True
 
 
 async def test_delayed_save(hass, setup, hass_ws_client, resident_token, hass_storage):

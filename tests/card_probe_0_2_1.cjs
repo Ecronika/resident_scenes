@@ -72,7 +72,7 @@ const editScene = async (s, sequence) => {
     const kelvin = q(root, '[data-field="color_temp_kelvin"][data-entity="light.r2_0"]');
     assert.ok(kelvin.closest(".slider").querySelector("output").textContent.includes("3.000 K"), "V5: 3.000 K");
     await click(root, '[data-field="light_mode"][data-entity="light.r2_0"] [data-value="colour"]');
-    assert.deepStrictEqual(JSON.parse(JSON.stringify(last(s, "set_entry").values)), { brightness: 128, hue: 30, saturation: 100 }, "only one of them is sent");
+    assert.deepStrictEqual(JSON.parse(JSON.stringify(last(s, "set_entry").values)), { hue: 30, saturation: 100 }, "only one of them is sent, the brightness stays on the server (X11)");
     assert.ok(q(root, '[data-field="hue"][data-entity="light.r2_0"]') && !q(root, '[data-field="color_temp_kelvin"][data-entity="light.r2_0"]'));
     card.remove();
   }

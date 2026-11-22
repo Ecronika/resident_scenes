@@ -41,6 +41,7 @@ from .model import (
     entity_area,
     is_main_user,
     is_music_player,
+    light_hs,
     music_favorites,
     opt,
     step_issue,
@@ -207,6 +208,9 @@ def ws_scene(hass: HomeAssistant, connection: Connection, msg: dict[str, Any]) -
             for entry in step["entries"]:
                 issue = step_issue(hass, step["area_id"], entry, allowed, favorites)
                 shown = {**entry, "issue": issue, "name": _name(hass, entry["entity_id"])}
+                attrs = entry.get("attributes") or {}
+                if "hs_color" not in attrs and (hs := light_hs(attrs)):  # the card's controls read hue (X11)
+                    shown["attributes"] = {**attrs, "hs_color": hs}
                 if entry.get("music") == "favorite":  # a renamed favorite shows its new name (spec 4.6)
                     shown["favorite_name"] = favorites.get(entry["favorite_id"], entry.get("favorite_name"))
                 item["entries"].append(shown)

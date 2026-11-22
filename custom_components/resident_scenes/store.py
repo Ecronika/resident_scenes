@@ -442,6 +442,8 @@ class SceneStore:
         work = deepcopy(scene)
         result = getattr(self, f"_{command}")(work, msg, is_admin) or {}
         began = self._apply(scene, work, msg["edit"], user_id)
+        if began:  # the edit that created the scene is over: the entity id stays from now on (spec 4.3)
+            work["entity_named"] = True
         if command == "update" and work["name"] != scene["name"]:
             self._rename_entity(work)
         if command == "update" and "image" in msg:
@@ -527,16 +529,17 @@ class SceneStore:
         work["content_released"] = bool(work["content_released"]) and work["kind"] == KIND_INSTALLER
 
     def _rename_entity(self, scene: dict[str, Any]) -> None:
-        """First rename: the entity id follows the name unless it was changed by hand (spec 4.3)."""
+        """In the edit that created the scene the entity id follows the name, unless changed by hand (spec 4.3)."""
         if scene["entity_named"]:
             return
-        scene["entity_named"] = True
         registry = er.async_get(self.hass)
         entity_id = registry.async_get_entity_id("scene", DOMAIN, scene["id"])
         if entity_id is None or entity_id != scene.get("auto_entity_id"):
             return
-        new_id = registry.async_get_available_entity_id("scene", slugify(scene["name"]))
-        registry.async_update_entity(entity_id, new_entity_id=new_id)
+        if entity_id != (new_id := f"scene.{slugify(scene['name'])}"):
+            new_id = registry.async_get_available_entity_id("scene", slugify(scene["name"]))
+            registry.async_update_entity(entity_id, new_entity_id=new_id)
+            scene["auto_entity_id"] = new_id
 
     def _add_step(self, work: dict[str, Any], msg: dict[str, Any], is_admin: bool = False) -> dict[str, Any]:
         sequence = work["sequence"]
@@ -597,8 +600,9 @@ class SceneStore:
         step = self._step(work, msg["step_id"], "group")
         if msg["entity_id"].split(".", 1)[0] != step["domain"]:
             raise ValidationError("entity_not_allowed", msg["entity_id"])
+        stored = next((e for e in step["entries"] if e["entity_id"] == msg["entity_id"]), None)
         entry = build_step(
-            self.hass, msg, allowed_entities(self.hass, self.entry), music_favorites(self.hass), step["area_id"]
+            self.hass, msg, allowed_entities(self.hass, self.entry), music_favorites(self.hass), step["area_id"], stored
         )
         self._put(step, entry)
         return {"live": [entry]} if msg.get("live") and step["domain"] in LIVE_DOMAINS else {}
@@ -639,14 +643,14 @@ class SceneStore:
         return {"live": changed} if live else {}
 
     def _house_off(self, work: dict[str, Any], msg: dict[str, Any], is_admin: bool) -> None:
-        """Every room with released devices of the domain: its first step of that domain switches all off."""
+        """Every room with released devices of the domain, and "no room" (X1): its first step of that domain all off."""
         if work["area_id"]:
             raise ValidationError("invalid_step")
         domain, sequence = msg["domain"], work["sequence"]
-        areas: dict[str, None] = {}  # in order of the device list
+        areas: dict[str | None, None] = {}  # in order of the device list
         for ent in allowed_entities(self.hass, self.entry).values():
-            if ent.domain == domain and (area_id := entity_area(self.hass, ent)):
-                areas.setdefault(area_id)
+            if ent.domain == domain:
+                areas.setdefault(entity_area(self.hass, ent))
         for area_id in areas:
             step = next(
                 (s for s in sequence if s["type"] == "group" and (s["domain"], s["area_id"]) == (domain, area_id)),
@@ -687,7 +691,8 @@ class SceneStore:
         previous["name"] = self._free_name(previous["name"], previous["area_id"], scene_id)
         scene.update(previous)
         scene.update(
-            version=scene["version"] + 1, previous=None, changed_by=user_id, changed_at=dt_util.utcnow().isoformat()
+            version=scene["version"] + 1, previous=None, changed_by=user_id, changed_at=dt_util.utcnow().isoformat(),
+            edits=[],  # an editor still open begins a new edit with its next input (X9)
         )
         await self._async_commit()
         return scene

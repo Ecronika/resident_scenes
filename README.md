@@ -51,8 +51,8 @@ view: manage       # manage (list and editor), list (run only) or favorites (fav
 ```
 
 The view `manage` shows list and scene side by side from 600 pixels card width. In a view of type "Sections" a
-section is narrower: give the card's section the full width, or use a panel view. The card asks for the full width
-of its section.
+section is narrower: give the card's section several columns, or use a panel view. With `view: manage` the card asks
+for the full width of its section (`columns: full`), with `list` and `favorites` for 12 columns.
 
 ## Action
 

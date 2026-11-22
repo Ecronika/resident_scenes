@@ -4,7 +4,7 @@ import { LitElement, html, css, nothing } from "lit";
 import { live } from "lit/directives/live.js";
 import { repeat } from "lit/directives/repeat.js";
 
-const VERSION = "0.3.1"; // must match the integration (checked by tests)
+const VERSION = "0.3.2"; // must match the integration (checked by tests)
 const WS = "resident_scenes";
 const HOUSE = "_house";
 const DOMAINS = ["light", "cover", "climate", "switch", "fan", "media_player", "scene"];
@@ -26,7 +26,7 @@ const I18N = {
     other_area: "In another room", favorite_missing: "Favorite missing", scene_missing: "Scene missing",
     all_off: "All off", all_closed: "All closed", all_house: "All in the house",
     rights_gone: "Your right to change scenes was withdrawn.", empty: "No scenes yet.", no_steps: "No steps yet.",
-    no_devices: "No released devices.", confirm_delete: "Delete this scene for good?", used_on: "Used by:",
+    no_devices: "No released devices.", confirm_delete: "Delete the scene “{name}” for good?", used_on: "Used by:",
     outside_note: "Automations and schedules using it will stop working.", yes: "Delete", no: "Keep", cancel: "Cancel",
     copy: "copy", reload: "A new version is installed. Please reload.", reload_btn: "Reload", house: "House", no_room: "No room", devices_n: "devices",
     installer: "Installer", protected: "Installer scene (protected)", released: "Content released to residents",
@@ -38,7 +38,9 @@ const I18N = {
     pick_room: "Room", pick_domain: "Trade", stale: "Not up to date, retrying …",
     offline: "Connection lost. Editing is locked until it is back.", seconds: "Delay (s)",
     no_room_scene: "No room scene any more", white: "White", colour: "Colour", saturation: "Saturation",
-    drag: "Drag to reorder, or use the arrow keys",
+    drag: "Drag to reorder, or use the arrow keys", moved: "Moved to position {n} of {m}.", more: "more",
+    no_effect: "no effect", undone: "The previous state applies again.",
+    no_favorites: "No favorites: none are stored in the music system, or its favorites sensor is disabled.",
     light: "Lights", cover: "Shading", climate: "Climate", switch: "Switches", fan: "Fans",
     media_player: "Music", scene: "Scenes",
     err: {
@@ -67,7 +69,7 @@ const I18N = {
     scene_missing: "Szene fehlt", all_off: "Alle aus", all_closed: "Alle zu", all_house: "Alle im Haus",
     rights_gone: "Ihr Recht, Szenen zu ändern, wurde entzogen.", empty: "Noch keine Szenen.",
     no_steps: "Noch keine Schritte.", no_devices: "Keine freigegebenen Geräte.",
-    confirm_delete: "Diese Szene endgültig löschen?", used_on: "Verwendet in:",
+    confirm_delete: "Die Szene „{name}“ endgültig löschen?", used_on: "Verwendet in:",
     outside_note: "Automationen und Zeitpläne damit wirken nicht mehr.", yes: "Löschen", no: "Behalten",
     cancel: "Abbrechen", copy: "Kopie", reload: "Eine neue Version ist installiert. Bitte neu laden.",
     reload_btn: "Neu laden", house: "Haus", no_room: "Ohne Raum", devices_n: "Geräte", installer: "Errichter", protected: "Errichterszene (geschützt)",
@@ -80,7 +82,9 @@ const I18N = {
     pick_room: "Raum", pick_domain: "Gewerk", stale: "Nicht aktuell, neuer Versuch läuft …",
     offline: "Verbindung unterbrochen. Der Editor ist gesperrt, bis sie zurück ist.", seconds: "Verzögerung (s)",
     no_room_scene: "Keine Raumszene mehr", white: "Weiß", colour: "Farbe", saturation: "Sättigung",
-    drag: "Ziehen zum Sortieren, oder Pfeiltasten",
+    drag: "Ziehen zum Sortieren, oder Pfeiltasten", moved: "An Stelle {n} von {m} verschoben.", more: "weitere",
+    no_effect: "ohne Wirkung", undone: "Der frühere Stand gilt wieder.",
+    no_favorites: "Keine Favoriten: Im Musiksystem sind keine hinterlegt, oder sein Favoriten-Sensor ist abgeschaltet.",
     light: "Licht", cover: "Beschattung", climate: "Klima", switch: "Schalter", fan: "Lüfter",
     media_player: "Musik", scene: "Szenen",
     err: {
@@ -118,6 +122,8 @@ class ResidentScenesCard extends LitElement {
     _slots: { state: true },
     _played: { state: true },
     _offline: { state: true },
+    _undone: { state: true },
+    _announce: { state: true },
   };
 
   setConfig(config) {
@@ -136,9 +142,9 @@ class ResidentScenesCard extends LitElement {
     return this._config?.view === "favorites" ? 2 : 4;
   }
 
-  // sections view: full width, so the two columns appear (V1)
+  // sections view: the full width of the section, so the two columns appear (V1, X2)
   getGridOptions() {
-    return { columns: 12, min_columns: 6, rows: "auto" };
+    return { columns: this._config?.view === "manage" ? "full" : 12, min_columns: 6, rows: "auto" };
   }
 
   connectedCallback() {
@@ -168,22 +174,31 @@ class ResidentScenesCard extends LitElement {
       this._focusStep = null;
       this.renderRoot.querySelector(`[data-action="drag"][data-id="${f.id}"]`)?.focus();
     }
-    // a question takes the focus on its safe answer and gives it back when it closes (V15)
+    // a question takes the focus on its safe answer, also when its content changes, and gives it back (V15, X5)
     const dialog = this.renderRoot.querySelector(".dialog");
-    if (dialog && dialog !== this._dialog) {
-      this._opener = this.renderRoot.activeElement;
-      dialog.querySelector("[data-safe]")?.focus();
-    } else if (!dialog && this._dialog) {
+    const safe = dialog?.querySelector("[data-safe]");
+    if (dialog && !this._dialog) this._opener = this.renderRoot.activeElement;
+    if (safe && safe !== this._safe) safe.focus();
+    else if (!dialog && this._dialog) {
       if (this._opener?.isConnected) this._opener.focus();
       this._opener = null;
     }
     this._dialog = dialog;
+    this._safe = safe;
   }
 
-  _escape(ev) {
-    if (ev.key !== "Escape") return;
-    ev.stopPropagation();
-    this.renderRoot.querySelector(".dialog [data-safe]")?.click();
+  // Escape picks the safe answer, Tab stays inside the question (spec 5.7)
+  _dialogKey(ev) {
+    if (ev.key === "Escape") {
+      ev.stopPropagation();
+      this.renderRoot.querySelector(".dialog [data-safe]")?.click();
+    } else if (ev.key === "Tab") {
+      const items = [...this.renderRoot.querySelectorAll(".dialog button:not([disabled])")];
+      const at = items.indexOf(this.renderRoot.activeElement);
+      const next = at < 0 ? 0 : (at + (ev.shiftKey ? -1 : 1) + items.length) % items.length;
+      ev.preventDefault();
+      items[next]?.focus();
+    }
   }
 
   _start() {
@@ -370,8 +385,11 @@ class ResidentScenesCard extends LitElement {
     if (!showDetail) return list;
     const editing = this._edit && this._detail?.id === this._edit.scene_id;
     const detail = editing ? this._renderEditor() : this._rights ? this._renderRights() : this._renderDetail();
-    if (this._narrow) return detail;
-    return html`<div class="columns"><div class="col-list">${list}</div><div class="col-detail">${detail}</div></div>`;
+    // a question lies over the whole card, the card behind takes no input (spec 5.7, X5)
+    const question = editing && this._edit.confirmDelete ? this._renderConfirmDelete()
+      : !editing && this._slots && this._detail ? this._renderSlots() : nothing;
+    const body = this._narrow ? detail : html`<div class="columns"><div class="col-list">${list}</div><div class="col-detail">${detail}</div></div>`;
+    return html`<div ?inert=${question !== nothing}>${body}</div>${question}`;
   }
 
   _playButton(eid, label = false, name = "") {
@@ -454,10 +472,10 @@ class ResidentScenesCard extends LitElement {
           : nothing}
       </div>
       ${this._detailError ? html`<p class="error" role="alert">${this._detailError}</p>` : nothing}
+      <p class="muted" role="status">${this._undone ? this._t("undone") : nothing}</p>
       ${s.sequence.length
-        ? html`<h3>${this._t("order")}</h3>${s.sequence.map((step) => html`<div class="row">${this._stepLine(step)}</div>`)}`
-        : html`<p class="muted">${this._t("no_steps")}</p>`}
-      ${this._slots ? this._renderSlots() : nothing}`;
+        ? html`<h3>${this._t("order")}</h3>${s.sequence.map((step, i) => html`<div class="row">${this._stepLine(step, i === s.sequence.length - 1)}</div>`)}`
+        : html`<p class="muted">${this._t("no_steps")}</p>`}`;
   }
 
   _stepTitle(step) {
@@ -465,17 +483,21 @@ class ResidentScenesCard extends LitElement {
     return room + this._t(step.type === "scene" ? "scene" : step.domain);
   }
 
-  // one line per step: "Küche – Licht: Decke 60 %, Wand Aus", "Küche – Szenen: Kochen", "+ 5 s" (spec 5.2)
-  _stepLine(step) {
-    const badge = (issue) => (issue ? html`<span class="badge warn">${this._t(issue)}</span>` : nothing);
-    if (step.type === "delay") return html`<span class="name">+ ${this._num(step.seconds)} s</span>`;
-    if (step.type === "scene") return html`<span class="name">${this._stepTitle(step)}: ${step.name}${badge(step.issue)}</span>`;
-    return html`<span class="name">${this._stepTitle(step)}:
-      ${step.entries.length > 2 // more do not fit one line; the values are in the opened step (V6)
-        ? html`${step.entries.length} ${this._t("devices_n")}${badge(step.entries.find((e) => e.issue)?.issue)}`
-        : step.entries.length
-        ? step.entries.map((e, i) => html`${i ? ", " : ""}${this._name(e.entity_id, e.name)} ${this._summary(e)}${badge(e.issue)}`)
-        : "–"}</span>`;
+  // at most two lines per step: "Küche – Licht" over "Decke 60 %, Wand Aus + 3 weitere"; "+ 5 s" (spec 5.2)
+  _stepLine(step, last = false) {
+    if (step.type === "delay") {
+      // a delay at the end delays nothing (spec 4.4)
+      return html`<span class="name">+ ${this._num(step.seconds)} s${last ? html` <span class="muted">· ${this._t("no_effect")}</span>` : nothing}</span>`;
+    }
+    const issue = step.type === "scene" ? step.issue : step.entries.find((e) => e.issue)?.issue;
+    // shortcut: two devices, the line clipped to the width; measure the names if the second one is often cut
+    const shown = step.type === "scene" ? [] : step.entries.slice(0, 2);
+    const more = step.type === "scene" ? 0 : step.entries.length - shown.length;
+    const values = step.type === "scene" ? step.name
+      : shown.map((e) => `${this._name(e.entity_id, e.name)} ${this._summary(e)}`).join(", ") || "–";
+    return html`<span class="name"><span class="line">${this._stepTitle(step)}</span>
+      <span class="line"><span class="clip">${values}</span>${more ? html`<span class="more">+ ${more} ${this._t("more")}</span>` : nothing}${
+        issue ? html`<span class="badge warn">${this._t(issue)}</span>` : nothing}</span></span>`;
   }
 
   _summary(entry) {
@@ -492,9 +514,26 @@ class ResidentScenesCard extends LitElement {
       return `${Math.round(a.brightness / 2.55)} %${color}`;
     }
     if (a.current_position != null) return `${a.current_position} %`;
-    if (a.temperature != null) return `${entry.state} · ${a.temperature} °`;
+    if (a.temperature != null) return `${this._state(entry.entity_id, entry.state)} · ${this._num(a.temperature)} ${this._unit}`;
     if (a.percentage != null) return `${a.percentage} %`;
-    return entry.state === "on" ? this._t("on") : entry.state;
+    return entry.state === "on" ? this._t("on") : this._state(entry.entity_id, entry.state);
+  }
+
+  // the name of a state in the language of the account, e.g. hvac mode "heat" (X8)
+  _state(eid, state) {
+    const st = this.hass.states[eid];
+    try {
+      const name = st && this.hass.formatEntityState?.(st, state);
+      if (name) return name;
+    } catch (err) {
+      // older frontend: the translation key below
+    }
+    const domain = eid.split(".")[0];
+    return this.hass.localize?.(`component.${domain}.entity_component._.state.${state}`) || state;
+  }
+
+  get _unit() {
+    return this.hass.config?.unit_system?.temperature ?? "°C";
   }
 
   // ---------- favorite slots (spec 4.7, V2) ----------
@@ -503,7 +542,7 @@ class ResidentScenesCard extends LitElement {
     const d = this._data;
     const current = d.favorites.indexOf(this._detail.id);
     const ask = this._slots.ask;
-    return html`<div class="overlay" @keydown=${this._escape}><div class="dialog" role="dialog" aria-modal="true" aria-label=${this._t("favorites")}>
+    return html`<div class="overlay" @keydown=${this._dialogKey}><div class="dialog" role="dialog" aria-modal="true" aria-label=${this._t("favorites")}>
       ${ask != null
         ? html`<p>${this._t("slot")} ${ask + 1}: ${this._scene(d.favorites[ask])?.name} ${this._t("loses")}</p>
             <div class="actions">
@@ -573,6 +612,9 @@ class ResidentScenesCard extends LitElement {
     this._detailError = null;
     try {
       await this.hass.callWS({ type: `${WS}/undo`, scene_id: this._detail.id, version: this._detail.version });
+      this._undone = true; // spec 5.3: the card says briefly that the previous state applies again
+      clearTimeout(this._undoneTimer);
+      this._undoneTimer = setTimeout(() => (this._undone = false), 4000);
     } catch (err) {
       this._detailError = this._err(err.code);
     }
@@ -586,10 +628,11 @@ class ResidentScenesCard extends LitElement {
       data-entity=${id ?? nothing} @click=${() => change(!on)}><span class="track"></span><span>${label}</span></button>`;
   }
 
-  _seg(field, eid, options, current, pick) {
+  // the marked choice of an unticked device ticks it (spec 4.5, X7)
+  _seg(field, eid, options, current, pick, ticked = true) {
     return html`<div class="seg" role="radiogroup" data-field=${field} data-entity=${eid}>
       ${options.map(([value, label]) => html`<button role="radio" aria-checked=${value === current ? "true" : "false"}
-        data-value=${value} @click=${() => value !== current && pick(value)}>${label}</button>`)}</div>`;
+        data-value=${value} @click=${() => (value !== current || !ticked) && pick(value)}>${label}</button>`)}</div>`;
   }
 
   // ---------- editor: every input is stored at once (spec 4.5) ----------
@@ -682,8 +725,8 @@ class ResidentScenesCard extends LitElement {
       <div class="editor" ?inert=${this._offline}>
         ${e.error ? html`<p class="error" role="alert">${this._err(e.error, e.errorDetail)}</p>` : nothing}
         ${step ? this._renderStep(step) : this._renderSequence()}
-      </div>
-      ${e.confirmDelete ? this._renderConfirmDelete() : nothing}`;
+        <p class="sr" role="status">${this._announce ?? nothing}</p>
+      </div>`;
   }
 
   _renderSequence() {
@@ -727,7 +770,7 @@ class ResidentScenesCard extends LitElement {
         : nothing}
       <h3>${this._t("order")}</h3>
       ${s.sequence.length
-        ? repeat(s.sequence, (x) => x.id, (x, i) => this._renderStepRow(x, i))
+        ? repeat(s.sequence, (x) => x.id, (x, i) => this._renderStepRow(x, i, i === s.sequence.length - 1))
         : html`<p class="muted">${this._t("no_steps")}</p>`}
       ${e.adding ? this._renderAdd() : nothing}
       <div class="actions">
@@ -740,7 +783,7 @@ class ResidentScenesCard extends LitElement {
       </div>`;
   }
 
-  _renderStepRow(step, i) {
+  _renderStepRow(step, i, last) {
     const remove = html`<button class="icon" data-action="remove-step" data-id=${step.id} aria-label=${this._t("remove")}
       @click=${() => this._send("remove_step", { step_id: step.id })}>✕</button>`;
     const handle = html`<span class="handle" role="button" tabindex="0" data-action="drag" data-id=${step.id}
@@ -766,9 +809,10 @@ class ResidentScenesCard extends LitElement {
             @click=${() => set(base() - 1)}>−</button>
           <label class="plain">+ <input class="secs" inputmode="numeric" pattern="[0-9]*" maxlength="3" data-field="delay"
             data-key=${key} aria-label=${this._t("seconds")} .value=${live(String(this._draft(key, step.seconds)))}
-            @input=${this._keep(key)} @change=${(ev) => set(Math.round(Number(ev.target.value)))} /> s</label>
+            @input=${this._keep(key)} @change=${(ev) => this._typedDelay(key, ev.target.value, max, set)} /> s</label>
           <button class="icon" data-action="delay-plus" aria-label="+1 s" ?disabled=${base() >= max}
             @click=${() => set(base() + 1)}>+</button>
+          ${last ? html`<span class="muted">${this._t("no_effect")}</span>` : nothing}
         </div>${remove}</div>`;
     }
     return html`<div class=${cls}>${handle}${this._stepLine(step)}
@@ -779,12 +823,24 @@ class ResidentScenesCard extends LitElement {
           : nothing}${remove}</div></div>`;
   }
 
-  _dragKey(ev, step, i) {
+  // whole seconds from 1 to the limit; anything else shows the stored value again and says why (spec 4.5, X4)
+  _typedDelay(key, typed, max, set) {
+    const seconds = /^\s*\d+\s*$/.test(typed) ? Number(typed) : NaN;
+    if (seconds >= 1 && seconds <= max) return set(seconds);
+    this._drafts.delete(key);
+    this._setEdit({ error: "invalid_delay", errorDetail: `1–${this._num(max)} s` });
+  }
+
+  async _dragKey(ev, step, i) {
     const to = ev.key === "ArrowUp" ? i - 1 : ev.key === "ArrowDown" ? i + 1 : -1;
     if (to < 0 || to >= this._detail.sequence.length) return;
     ev.preventDefault();
     this._focusStep = { id: step.id, index: to };
-    this._send("move_step", { step_id: step.id, index: to });
+    const count = this._detail.sequence.length;
+    // the new place for screen readers (spec 5.7)
+    if (await this._send("move_step", { step_id: step.id, index: to })) {
+      this._announce = this._t("moved").replace("{n}", to + 1).replace("{m}", count);
+    }
   }
 
   // drag the handle of a row onto another row (spec 5.7); pointer events cover mouse, touch and pen
@@ -933,24 +989,22 @@ class ResidentScenesCard extends LitElement {
     };
     const power = (send) => this._switch("on", on, this._t("on"), (o) => (o ? send() : off()), eid);
     if (dev.domain === "light") {
-      // the server takes the colour temperature if both are sent, so only one of them is kept
+      // an input sends only its own value, the server keeps the stored rest, e.g. an xy colour (spec 4.5, X11)
       const white = c.color_temp && (!c.color || v.hue == null);
       const kelvin = v.color_temp_kelvin ?? c.min_kelvin ?? 2700;
-      const colour = white ? { color_temp_kelvin: kelvin } : c.color ? { hue: v.hue ?? 30, saturation: v.saturation ?? 100 } : {};
-      const send = (patch = {}) => set({ ...(c.brightness ? { brightness: v.brightness } : {}), ...colour, ...patch });
-      return html`${power(send)}
+      const colour = (patch) => set({ hue: v.hue ?? 30, saturation: v.saturation ?? 100, ...patch });
+      return html`${power(() => set({}))}
         ${c.brightness ? slider("brightness", "brightness", 1, 100, Math.round(v.brightness / 2.55), "%",
-          (p) => send({ brightness: Math.max(1, Math.round(p * 2.55)) })) : nothing}
+          (p) => set({ brightness: Math.max(1, Math.round(p * 2.55)) })) : nothing}
         ${c.color_temp && c.color
           ? this._seg("light_mode", eid, [["white", this._t("white")], ["colour", this._t("colour")]], white ? "white" : "colour",
-              (m) => set({ brightness: v.brightness, ...(m === "white"
-                ? { color_temp_kelvin: kelvin } : { hue: v.hue ?? 30, saturation: v.saturation ?? 100 }) }))
+              (m) => (m === "white" ? set({ color_temp_kelvin: kelvin }) : colour({})), !!entry)
           : nothing}
         ${white ? slider("color_temp_kelvin", "color_temp", c.min_kelvin ?? 2000, c.max_kelvin ?? 6500, kelvin, "K",
-          (k) => send({ color_temp_kelvin: k })) : nothing}
+          (k) => set({ color_temp_kelvin: k })) : nothing}
         ${c.color && !white
-          ? html`${slider("hue", "hue", 0, 360, v.hue ?? 30, "°", (h) => send({ hue: h }))}
-              ${slider("saturation", "saturation", 0, 100, v.saturation ?? 100, "%", (x) => send({ saturation: x }))}`
+          ? html`${slider("hue", "hue", 0, 360, v.hue ?? 30, "°", (h) => colour({ hue: h }))}
+              ${slider("saturation", "saturation", 0, 100, v.saturation ?? 100, "%", (x) => colour({ saturation: x }))}`
           : nothing}`;
     }
     if (dev.domain === "cover") {
@@ -962,11 +1016,18 @@ class ResidentScenesCard extends LitElement {
     if (dev.domain === "climate") {
       const key = `temperature:${step.id}:${eid}`;
       const send = (patch) => set({ hvac_mode: v.hvac_mode, ...(v.temperature != null ? { temperature: v.temperature } : {}), ...patch });
-      return html`${this._seg("hvac_mode", eid, (c.hvac_modes ?? []).map((m) => [m, m]), v.hvac_mode, (m) => send({ hvac_mode: m }))}
-        <label class="field">${this._t("temperature")}<input type="number" min=${c.min_temp ?? 5} max=${c.max_temp ?? 35}
-          step=${c.temp_step ?? 0.5} data-field="temperature" data-entity=${eid} data-key=${key}
-          .value=${live(String(this._draft(key, v.temperature ?? "")))} @input=${this._keep(key)}
-          @change=${(ev) => send({ temperature: Number(ev.target.value) })} /></label>`;
+      // a text field: no arrows of the browser (X8); "21,5" is read like "21.5"
+      const typed = (ev) => {
+        const value = Number(ev.target.value.trim().replace(",", "."));
+        if (ev.target.value.trim() && Number.isFinite(value)) return send({ temperature: value });
+        this._drafts.delete(key);
+        this._setEdit({ error: "invalid_value", errorDetail: this._t("temperature") });
+      };
+      return html`${this._seg("hvac_mode", eid, (c.hvac_modes ?? []).map((m) => [m, this._state(eid, m)]), v.hvac_mode,
+          (m) => send({ hvac_mode: m }), !!entry)}
+        <label class="field">${this._t("temperature")} (${this._unit})<input inputmode="decimal" maxlength="5"
+          data-field="temperature" data-entity=${eid} data-key=${key}
+          .value=${live(String(this._draft(key, v.temperature ?? "")))} @input=${this._keep(key)} @change=${typed} /></label>`;
     }
     if (dev.domain === "fan") {
       return html`${power(() => set({ percentage: v.percentage }))}
@@ -976,15 +1037,20 @@ class ResidentScenesCard extends LitElement {
     if (dev.domain === "media_player") {
       const mode = entry ? entry.music : ["playing", "on"].includes(source.state) ? "on" : "off";
       const volume = entry?.volume ?? this.hass.states[eid]?.attributes.volume_level ?? 0.3;
-      const favorite = entry?.favorite_id ?? this._edit.favorites[0]?.id;
-      const modes = [["off", this._t("off")], ["on", this._t("on")], ...(dev.music_system ? [["favorite", this._t("favorite")]] : [])];
-      const send = (m, patch = {}) => music(m, m === "off" ? {} : { volume, ...(m === "favorite" ? { favorite_id: favorite ?? "" } : {}), ...patch });
-      return html`${this._seg("music", eid, modes, mode, (m) => send(m))}
-        ${mode === "favorite"
-          ? this._seg("favorite_id", eid, [
-              ...(entry?.issue === "favorite_missing" ? [["", this._t("favorite_missing")]] : []),
-              ...this._edit.favorites.map((f) => [f.id, f.name])], entry?.issue === "favorite_missing" ? "" : favorite,
-              (id) => send("favorite", { favorite_id: id }))
+      const favs = this._edit.favorites;
+      const favorite = entry?.favorite_id ?? favs[0]?.id;
+      // "Favorit" only with favorites to choose from (X6); a stored favorite stays visible
+      const offer = dev.music_system && (favs.length > 0 || mode === "favorite");
+      const modes = [["off", this._t("off")], ["on", this._t("on")], ...(offer ? [["favorite", this._t("favorite")]] : [])];
+      const send = (m, patch = {}) => music(m, m === "off" ? {} : { volume, ...(m === "favorite" ? { favorite_id: favorite } : {}), ...patch });
+      const missing = entry?.issue === "favorite_missing";
+      return html`${this._seg("music", eid, modes, mode, (m) => send(m), !!entry)}
+        ${dev.music_system && !offer ? html`<p class="muted">${this._t("no_favorites")}</p>` : nothing}
+        ${mode === "favorite" // one list, not a button per favorite (spec 5.2)
+          ? html`<select data-field="favorite_id" data-entity=${eid} aria-label=${this._t("favorite")}
+              @change=${(ev) => send("favorite", { favorite_id: ev.target.value })}>
+              ${missing ? html`<option value="" selected disabled>${this._t("favorite_missing")}</option>` : nothing}
+              ${favs.map((f) => html`<option value=${f.id} ?selected=${!missing && f.id === favorite}>${f.name}</option>`)}</select>`
           : nothing}
         ${mode !== "off"
           ? slider("volume", "volume", 0, 100, Math.round(volume * 100), "%", (p) => send(mode, { volume: p / 100 }))
@@ -1093,7 +1159,8 @@ class ResidentScenesCard extends LitElement {
       return `${this._areaName(scope === HOUSE ? null : scope)} ${this._t("slot")} ${n}`;
     });
     const all = [...used.scenes, ...slots];
-    return html`<div class="overlay" @keydown=${this._escape}><div class="dialog" role="alertdialog" aria-modal="true">${this._t("confirm_delete")}
+    const question = this._t("confirm_delete").replace("{name}", this._detail.name);
+    return html`<div class="overlay" @keydown=${this._dialogKey}><div class="dialog" role="alertdialog" aria-modal="true" aria-label=${question}>${question}
       ${all.length ? html`<br />${this._t("used_on")} ${all.join(", ")}` : nothing}
       <br /><span class="muted">${this._t("outside_note")}</span>
       <div class="actions">
@@ -1122,6 +1189,8 @@ class ResidentScenesCard extends LitElement {
     button, input[type=number], input:not([type]) { min-height: 44px; font: inherit; color: inherit; border-radius: 8px;
       border: 1px solid var(--divider-color); background: transparent; padding: 0 12px; box-sizing: border-box; max-width: 100%; }
     button { cursor: pointer; min-width: 44px; }
+    select { min-height: 44px; font: inherit; color: inherit; border-radius: 8px; border: 1px solid var(--divider-color);
+      background: transparent; padding: 0 12px; max-width: 100%; }
     button:focus-visible, input:focus-visible, .handle:focus-visible { outline: 2px solid var(--primary-color); }
     button.primary { background: var(--primary-color); color: var(--text-primary-color, #fff); border-color: var(--primary-color); }
     button.danger { color: var(--error-color); border-color: var(--error-color); }
@@ -1133,6 +1202,9 @@ class ResidentScenesCard extends LitElement {
     .row.selected { background: var(--secondary-background-color); border-left: 4px solid var(--primary-color); padding-left: 4px; }
     .row.selected .name { color: var(--primary-color); font-weight: 500; }
     .row .name { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+    .name .line { display: flex; gap: 4px; align-items: center; min-width: 0; overflow: hidden; white-space: nowrap; }
+    .line .clip { min-width: 0; overflow: hidden; text-overflow: ellipsis; } .line .more, .line .badge { flex: none; }
+    .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); margin: 0; }
     .thumb { width: 40px; height: 40px; border-radius: 6px; object-fit: cover; background: var(--secondary-background-color); flex: none;
       display: inline-flex; align-items: center; justify-content: center; color: var(--secondary-text-color); }
     .thumb svg { width: 24px; height: 24px; }

@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.3.2
+
+Fixes of the 0.3.1 review and draft 0.9 of the functional spec.
+
+- "All in the house off" also switches off released devices without a room, in a step "Without room" (X1).
+- The card asks for the full width of its section in the view `manage` (X2).
+- A step without a room takes devices without a room only; an entry whose device got a room is marked "In another
+  room" on the server and in the card, also in the sequence, and cannot be changed (X3, X10).
+- Delay field: an input that is not a whole number from 1 to the limit shows the stored value again with the reason;
+  "2.5" is no longer rounded (X4).
+- Questions take the focus on the safe answer whenever their content changes, Tab stays inside, and the card behind
+  takes no input; the delete question names the scene (X5, spec 5.3, 5.7).
+- Music: "Favorite" is offered only when favorites exist, otherwise a hint names the reason (X6); the favorites are
+  one list instead of a button each (spec 5.2).
+- Pressing the marked choice of an unticked device ticks it (X7).
+- Thermostat: operation modes in the language of the account, the setpoint with the unit of the installation and in
+  a field without arrows of the browser (X8).
+- Undo ends the open edits of the scene, so the next input begins a new edit (X9).
+- Light colour: the card gets hue and saturation for a colour stored as RGB, RGBW, RGBWW or xy, and an input changes
+  only its own value; changing the brightness keeps the stored colour, white channels included (X11, acceptance
+  "Farbe bleibt").
+- The entity id follows the name only in the edit that created the scene, there at every rename (spec 4.3).
+- Card: a step takes at most two lines, the devices as "+ 3 more" beyond two; a delay at the end says "no effect";
+  after undo the card says that the previous state applies again; moving a step with the arrow keys is announced to
+  screen readers (spec 5.2, 5.3, 5.7).
+
 ## 0.3.1
 
 Fixes of the 0.3.0 review.
