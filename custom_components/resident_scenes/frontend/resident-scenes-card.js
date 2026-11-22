@@ -731,7 +731,7 @@
   });
 
   // src/resident-scenes-card.js
-  var VERSION = "0.4.1";
+  var VERSION = "0.4.2";
   var WS = "resident_scenes";
   var HOUSE = "_house";
   var DOMAINS = ["light", "cover", "climate", "switch", "fan", "media_player", "scene"];
@@ -785,6 +785,7 @@
       no_access: "No access to this room",
       no_access_house: "No access to the house scenes",
       room_gone: "Your access to this room was withdrawn.",
+      house_gone: "Your access to the house scenes was withdrawn.",
       all_rooms: "All rooms",
       house_right: "may run house scenes",
       no_floor: "Rooms without floor",
@@ -924,6 +925,7 @@
       no_access: "Kein Zugriff auf diesen Raum",
       no_access_house: "Kein Zugriff auf die Haus-Szenen",
       room_gone: "Ihr Zugriff auf diesen Raum wurde entzogen.",
+      house_gone: "Ihr Zugriff auf die Haus-Szenen wurde entzogen.",
       all_rooms: "Alle R\xE4ume",
       house_right: "darf Haus-Szenen ausl\xF6sen",
       no_floor: "R\xE4ume ohne Etage",
@@ -1184,9 +1186,9 @@
         this._selected = null;
         this._detail = null;
         this._slots = null;
-        this._notice = "room_gone";
+        this._notice = this._house ? "house_gone" : "room_gone";
       }
-      if (this._data.access !== false && this._notice === "room_gone") this._notice = null;
+      if (this._data.access !== false && ["room_gone", "house_gone"].includes(this._notice)) this._notice = null;
       if (this._edit && !this._data.can_edit) {
         this._edit = null;
         this._notice = "rights_gone";
@@ -2089,6 +2091,8 @@
     _detail: { state: true },
     _edit: { state: true },
     _rights: { state: true },
+    _roomInfo: { state: true },
+    // a tap in the room tree shows at once (review AC1)
     _selected: { state: true },
     _narrow: { state: true },
     _notice: { state: true },

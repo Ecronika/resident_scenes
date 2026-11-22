@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.4.2
+
+Hints of the 0.4.1 review.
+
+- Room tree in the card: a switch moves at once on a tap, not only when the server has answered, so a second tap no
+  longer repeats the first (AC1).
+- House card: when the house right is withdrawn while a house scene is open, the card says "Your access to the house
+  scenes was withdrawn." instead of the sentence about a room (AC2).
+- `set_rooms` that changes nothing still succeeds but writes no logbook entry, so quick taps give no equal entries
+  (AC3, spec 3).
+- Tests: the 0.4.1 review files `test_review_0_4_1.py` and `card_probe_0_4_1.cjs` are added with the hints marked
+  fixed.
+
 ## 0.4.1
 
 Fixes of the 0.4.0 review (Nachbesserung 4a, draft 0.16 of the functional spec).

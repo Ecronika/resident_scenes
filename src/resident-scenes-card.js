@@ -4,7 +4,7 @@ import { LitElement, html, css, nothing } from "lit";
 import { live } from "lit/directives/live.js";
 import { repeat } from "lit/directives/repeat.js";
 
-const VERSION = "0.4.1"; // must match the integration (checked by tests)
+const VERSION = "0.4.2"; // must match the integration (checked by tests)
 const WS = "resident_scenes";
 const HOUSE = "_house";
 const DOMAINS = ["light", "cover", "climate", "switch", "fan", "media_player", "scene"];
@@ -26,7 +26,7 @@ const I18N = {
     other_area: "In another room", favorite_missing: "Favorite missing", scene_missing: "Scene missing",
     all_off: "All off", all_closed: "All closed", all_house: "All in the house",
     rights_gone: "Your right to change scenes was withdrawn.", no_access: "No access to this room", no_access_house: "No access to the house scenes",
-    room_gone: "Your access to this room was withdrawn.", all_rooms: "All rooms", house_right: "may run house scenes",
+    room_gone: "Your access to this room was withdrawn.", house_gone: "Your access to the house scenes was withdrawn.", all_rooms: "All rooms", house_right: "may run house scenes",
     no_floor: "Rooms without floor", empty: "No scenes yet.", no_steps: "No steps yet.",
     no_devices: "No released devices.", confirm_delete: "Delete the scene “{name}” for good?", used_on: "Used by:",
     outside_note: "Automations and schedules using it will stop working.", yes: "Delete", no: "Keep", cancel: "Cancel",
@@ -71,7 +71,7 @@ const I18N = {
     not_released: "Nicht freigegeben", other_area: "In anderem Raum", favorite_missing: "Favorit fehlt",
     scene_missing: "Szene fehlt", all_off: "Alle aus", all_closed: "Alle zu", all_house: "Alle im Haus",
     rights_gone: "Ihr Recht, Szenen zu ändern, wurde entzogen.", no_access: "Kein Zugriff auf diesen Raum", no_access_house: "Kein Zugriff auf die Haus-Szenen",
-    room_gone: "Ihr Zugriff auf diesen Raum wurde entzogen.", all_rooms: "Alle Räume", house_right: "darf Haus-Szenen auslösen",
+    room_gone: "Ihr Zugriff auf diesen Raum wurde entzogen.", house_gone: "Ihr Zugriff auf die Haus-Szenen wurde entzogen.", all_rooms: "Alle Räume", house_right: "darf Haus-Szenen auslösen",
     no_floor: "Räume ohne Etage", empty: "Noch keine Szenen.",
     no_steps: "Noch keine Schritte.", no_devices: "Keine freigegebenen Geräte.",
     confirm_delete: "Die Szene „{name}“ endgültig löschen?", used_on: "Verwendet in:",
@@ -120,6 +120,7 @@ class ResidentScenesCard extends LitElement {
     _detail: { state: true },
     _edit: { state: true },
     _rights: { state: true },
+    _roomInfo: { state: true }, // a tap in the room tree shows at once (review AC1)
     _selected: { state: true },
     _narrow: { state: true },
     _notice: { state: true },
@@ -315,9 +316,9 @@ class ResidentScenesCard extends LitElement {
       this._selected = null;
       this._detail = null;
       this._slots = null;
-      this._notice = "room_gone";
+      this._notice = this._house ? "house_gone" : "room_gone"; // review AC2
     }
-    if (this._data.access !== false && this._notice === "room_gone") this._notice = null;
+    if (this._data.access !== false && ["room_gone", "house_gone"].includes(this._notice)) this._notice = null;
     // rights withdrawn while editing: back to the scene view, the server rejects inputs anyway
     if (this._edit && !this._data.can_edit) {
       this._edit = null;

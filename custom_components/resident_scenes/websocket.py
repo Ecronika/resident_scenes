@@ -563,6 +563,9 @@ async def ws_set_rooms(hass: HomeAssistant, connection: Connection, msg: dict[st
     rooms = {k: v for k, v in opt(entry, CONF_ROOMS).items() if k != uid} | ({} if wanted is None else {uid: wanted})
     no_house = [u for u in opt(entry, CONF_USERS_WITHOUT_HOUSE) if u != uid]
     no_house = no_house if msg["house"] else [*no_house, uid]
+    if rooms == opt(entry, CONF_ROOMS) and set(no_house) == set(opt(entry, CONF_USERS_WITHOUT_HOUSE)):
+        connection.send_result(msg["id"])  # nothing changes: no logbook entry (review AC3)
+        return
     options = {**entry.options, CONF_ROOMS: rooms, CONF_USERS_WITHOUT_HOUSE: no_house}
     hass.config_entries.async_update_entry(entry, options=options)
     names = None if wanted is None else [areas.async_get_area(a).name for a in wanted]  # type: ignore[union-attr]
