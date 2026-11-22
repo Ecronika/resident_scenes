@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import asyncio
 
-from pytest_homeassistant_custom_component.common import async_mock_service
+from pytest_homeassistant_custom_component.common import async_capture_events, async_mock_service
 
 from custom_components.resident_scenes import store as store_module
 from custom_components.resident_scenes.const import DOMAIN, EVENT_CHANGED, STORAGE_KEY
@@ -123,8 +123,7 @@ async def test_edit_of_a_scene_stored_by_0_3_0(hass, hass_storage, setup, hass_w
     call = await ws(hass, hass_ws_client, resident_token)
     sid = await save(call, name="Cook", area_id="kitchen", steps=[LIGHT_SET])
     del setup.runtime_data.scenes[sid]["edits"]  # as loaded from a store of 0.3.0
-    events = []
-    hass.bus.async_listen(EVENT_CHANGED, events.append)
+    events = async_capture_events(hass, EVENT_CHANGED)
     assert (await call(**cmd("update", sid, "e9", transition=2)))["success"]
     await hass.async_block_till_done()
     assert [e.data["action"] for e in events] == ["changed"]  # OK
@@ -138,8 +137,7 @@ async def test_idle_counts_from_the_last_input(hass, setup, hass_ws_client, resi
     """Draft 0.9, 4.5: an edit ends after ten minutes without input."""
     call = await ws(hass, hass_ws_client, resident_token)
     sid = await save(call, name="Cook", area_id="kitchen", steps=[LIGHT_SET], edit="create")
-    events = []
-    hass.bus.async_listen(EVENT_CHANGED, events.append)
+    events = async_capture_events(hass, EVENT_CHANGED)
     for value in (1, 2, 3):  # an input every nine minutes
         assert (await call(**cmd("update", sid, "e1", transition=value)))["success"]
         freezer.tick(9 * 60)
@@ -156,8 +154,7 @@ async def test_x9_undo_from_a_second_card_leaves_the_edit_open(hass, setup, hass
     call = await ws(hass, hass_ws_client, resident_token)
     sid = await save(call, name="Cook", area_id="kitchen", steps=[LIGHT_SET], edit="create")
     store = setup.runtime_data
-    events = []
-    hass.bus.async_listen(EVENT_CHANGED, events.append)
+    events = async_capture_events(hass, EVENT_CHANGED)
     assert (await call(**cmd("update", sid, "e1", transition=5)))["success"]
     res = await call(type=f"{DOMAIN}/undo", scene_id=sid, version=store.scenes[sid]["version"])
     assert res["success"] and store.scenes[sid]["transition"] is None

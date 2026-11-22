@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.4.1
+
+Fixes of the 0.4.0 review (Nachbesserung 4a, draft 0.16 of the functional spec).
+
+- `scene.turn_on` without the room right no longer marks the scene as run: the entity derives from `BaseScene` and
+  checks the right before it records the run, so a refused call leaves the scene state unchanged and no state trigger
+  fires (AB1, spec 4.4).
+- Templates accept `rooms` (user id to a list of known area ids) and `users_without_house` (list of user ids), checked
+  like `set_rooms`; an unknown room refuses the whole template. The settings form still does not show them (AB2, 4.1).
+- Room tree in the card: a tap applies at once to the card's own state, and the calls go out one after the other, each
+  built from the state chosen last, so two quick taps both apply (AB3).
+- Favorites view without the right stays invisible, like one without a slot in use; the house card without the house
+  right says "No access to the house scenes" (AB4, spec 4.7, 5.5, 5.6).
+- README: a script or button started by an account runs under that account and needs its room right (AB6).
+- Tests collect events with `async_capture_events`, so their order is fixed (AB7); the 0.4.0 review files
+  `test_review_0_4_0.py` and `card_probe_0_4_0_review.cjs` are added with the findings marked fixed. A house scene
+  still shows its whole sequence (AB5, as decided).
+
 ## 0.4.0
 
 Stage 4 of the functional spec: room rights per account (draft 0.13, sections 3, 4.4, 4.7, 5.5, 5.6).

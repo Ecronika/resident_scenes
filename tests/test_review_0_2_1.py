@@ -9,7 +9,11 @@ from __future__ import annotations
 import asyncio
 from datetime import timedelta
 
-from pytest_homeassistant_custom_component.common import async_fire_time_changed, async_mock_service
+from pytest_homeassistant_custom_component.common import (
+    async_capture_events,
+    async_fire_time_changed,
+    async_mock_service,
+)
 
 from custom_components.resident_scenes.const import DOMAIN, EVENT_BATCH
 from homeassistant.helpers import issue_registry as ir
@@ -35,8 +39,7 @@ async def test_t1_a_scene_cannot_be_made_to_call_itself(hass, setup, hass_ws_cli
     store.scenes[house]["sequence"].append(
         {"id": "00000001", "type": "scene", "scene_id": house, "name": "Home", "area_id": None}
     )
-    batches = []
-    hass.bus.async_listen(EVENT_BATCH, batches.append)
+    batches = async_capture_events(hass, EVENT_BATCH)
     async_mock_service(hass, "light", "turn_on")
     await hass.services.async_call("scene", "turn_on", {"entity_id": _eid(hass, house)}, blocking=True)
     await asyncio.sleep(0.3)

@@ -7,7 +7,7 @@ import logging
 from typing import Any
 
 from homeassistant.auth.permissions.const import POLICY_CONTROL
-from homeassistant.components.scene import Scene
+from homeassistant.components.scene import BaseScene
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import Unauthorized
 from homeassistant.helpers import entity_registry as er
@@ -62,7 +62,7 @@ async def async_setup_entry(
     entry.async_on_unload(async_track_time_interval(hass, refresh_pictures, PICTURE_REFRESH))
 
 
-class ResidentScene(Scene):
+class ResidentScene(BaseScene):
     """A scene created by residents."""
 
     _attr_has_entity_name = True
@@ -126,11 +126,14 @@ class ResidentScene(Scene):
         if entry is not None and entry.platform == DOMAIN and entry.area_id != self._scene["area_id"]:
             registry.async_update_entity(self.entity_id, area_id=self._scene["area_id"])
 
-    async def async_activate(self, **kwargs: Any) -> None:
-        """Run the scene; a call with a user needs the room right, or for a house scene the house right (spec 4.4).
+    async def _async_activate(self, **kwargs: Any) -> None:
+        """Check the right, then record the run and run the scene (spec 4.4).
+
+        A call with a user needs the room right, or for a house scene the house right.
 
         Calls without a user (automations, schedules, KNX push buttons) always run. A house scene runs
-        fully, also its steps in rooms the user has no right for.
+        fully, also its steps in rooms the user has no right for. A refused call leaves the state as it is:
+        Scene of the core records the run before async_activate, so this overrides _async_activate.
         """
         context, scene = self._context, self._scene
         user = await self.hass.auth.async_get_user(context.user_id) if context and context.user_id else None
@@ -143,4 +146,6 @@ class ResidentScene(Scene):
                 context=context,
             )
             raise Unauthorized(context=context, entity_id=self.entity_id, permission=POLICY_CONTROL)
+        self._async_record_activation()
+        self.async_write_ha_state()
         await self.store.runner.async_run(self._attr_unique_id, context)

@@ -11,7 +11,7 @@ import io
 
 from PIL import Image
 import pytest
-from pytest_homeassistant_custom_component.common import async_mock_service
+from pytest_homeassistant_custom_component.common import async_capture_events, async_mock_service
 
 from custom_components.resident_scenes import store as store_module
 from custom_components.resident_scenes.const import (
@@ -98,8 +98,7 @@ async def test_w3_edit_id_is_not_bound_to_account_or_time(
     sid = await save(resident, name="Cook", area_id="kitchen", steps=[LIGHT_SET], edit="create")
     store = setup.runtime_data
     step = group(store.scenes[sid], "light")
-    events = []
-    hass.bus.async_listen(EVENT_CHANGED, events.append)
+    events = async_capture_events(hass, EVENT_CHANGED)
     entry = {"step_id": step["id"], "entity_id": "light.kitchen", "mode": "set"}
     assert (await resident(**cmd("set_entry", sid, "e1", **entry, values={"brightness": 20})))["success"]
     await hass.async_block_till_done()
@@ -150,8 +149,7 @@ async def test_w5_reload_while_editing_moves_the_undo_point(hass, setup, hass_ws
     sid = await save(call, name="Cook", area_id="kitchen", steps=[LIGHT_SET], edit="create")
     step = group(setup.runtime_data.scenes[sid], "light")
     entry = {"step_id": step["id"], "entity_id": "light.kitchen", "mode": "set"}
-    events = []
-    hass.bus.async_listen(EVENT_CHANGED, events.append)
+    events = async_capture_events(hass, EVENT_CHANGED)
     assert (await call(**cmd("set_entry", sid, "e1", **entry, values={"brightness": 20})))["success"]
     assert await hass.config_entries.async_reload(setup.entry_id)
     await hass.async_block_till_done()
@@ -297,8 +295,7 @@ async def test_u1_two_scenes_of_one_automation_run(hass, setup, hass_ws_client, 
     fast = await save(call, name="Fast", steps=[{"mode": "scene", "scene_id": room}])
     await hass.async_block_till_done()
     on = async_mock_service(hass, "light", "turn_on")
-    skipped = []
-    hass.bus.async_listen(EVENT_SKIPPED, skipped.append)
+    skipped = async_capture_events(hass, EVENT_SKIPPED)
     run = Context()  # one automation or script run
     for scene_id in (slow, fast):
         target = {"entity_id": eid(hass, scene_id)}

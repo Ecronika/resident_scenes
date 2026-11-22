@@ -4,7 +4,7 @@ import { LitElement, html, css, nothing } from "lit";
 import { live } from "lit/directives/live.js";
 import { repeat } from "lit/directives/repeat.js";
 
-const VERSION = "0.4.0"; // must match the integration (checked by tests)
+const VERSION = "0.4.1"; // must match the integration (checked by tests)
 const WS = "resident_scenes";
 const HOUSE = "_house";
 const DOMAINS = ["light", "cover", "climate", "switch", "fan", "media_player", "scene"];
@@ -25,7 +25,7 @@ const I18N = {
     volume: "Volume", call: "Run", missing: "Device missing", unavailable: "Not reachable", not_released: "Not released",
     other_area: "In another room", favorite_missing: "Favorite missing", scene_missing: "Scene missing",
     all_off: "All off", all_closed: "All closed", all_house: "All in the house",
-    rights_gone: "Your right to change scenes was withdrawn.", no_access: "No access to this room",
+    rights_gone: "Your right to change scenes was withdrawn.", no_access: "No access to this room", no_access_house: "No access to the house scenes",
     room_gone: "Your access to this room was withdrawn.", all_rooms: "All rooms", house_right: "may run house scenes",
     no_floor: "Rooms without floor", empty: "No scenes yet.", no_steps: "No steps yet.",
     no_devices: "No released devices.", confirm_delete: "Delete the scene “{name}” for good?", used_on: "Used by:",
@@ -70,7 +70,7 @@ const I18N = {
     favorite: "Favorit", volume: "Lautstärke", call: "Aufruf", missing: "Gerät fehlt", unavailable: "Nicht erreichbar",
     not_released: "Nicht freigegeben", other_area: "In anderem Raum", favorite_missing: "Favorit fehlt",
     scene_missing: "Szene fehlt", all_off: "Alle aus", all_closed: "Alle zu", all_house: "Alle im Haus",
-    rights_gone: "Ihr Recht, Szenen zu ändern, wurde entzogen.", no_access: "Kein Zugriff auf diesen Raum",
+    rights_gone: "Ihr Recht, Szenen zu ändern, wurde entzogen.", no_access: "Kein Zugriff auf diesen Raum", no_access_house: "Kein Zugriff auf die Haus-Szenen",
     room_gone: "Ihr Zugriff auf diesen Raum wurde entzogen.", all_rooms: "Alle Räume", house_right: "darf Haus-Szenen auslösen",
     no_floor: "Räume ohne Etage", empty: "Noch keine Szenen.",
     no_steps: "Noch keine Schritte.", no_devices: "Keine freigegebenen Geräte.",
@@ -345,6 +345,7 @@ class ResidentScenesCard extends LitElement {
   async _loadRights() {
     try {
       const r = await this.hass.callWS({ type: `${WS}/rights` });
+      if (this._roomsBusy) return; // taps still on the way; the last one reloads (AB3)
       this._roomInfo = r; // room rights, floors and rooms (stage 4)
       this._rights = r.accounts;
     } catch (err) {
@@ -409,7 +410,10 @@ class ResidentScenesCard extends LitElement {
     const outdated = this._data && this._data.version !== VERSION;
     let body = nothing;
     if (this._data?.access === false) {
-      body = html`<p class="muted" role="status" data-hint="no_access">${this._t("no_access")}</p>`; // spec 5.5
+      // the favorites view stays invisible without the right, like one without a slot in use (spec 4.7, 5.5)
+      if (this._config.view === "favorites" && !outdated) return nothing;
+      const hint = this._config.scope === "house" ? "no_access_house" : "no_access";
+      body = html`<p class="muted" role="status" data-hint="no_access">${this._t(hint)}</p>`; // spec 5.5
     } else if (this._data && this._config.view === "favorites") {
       body = this._renderFavorites();
       // empty slots stay invisible (spec 4.7), so does a card without any
@@ -669,13 +673,17 @@ class ResidentScenesCard extends LitElement {
     const right = info?.room_rights?.[uid];
     if (!right) return nothing;
     const rooms = right.rooms;
-    const set = (next) => this._setRooms(uid, next, right.house);
+    // each tap is built from the state chosen last, not from this render (AB3)
+    const set = (next) => this._setRooms(uid, () => ({ rooms: next() }));
     const groups = [...info.floors.map((f) => [f.floor_id, f.name]), [null, this._t("no_floor")]]
       .map(([id, name]) => [id, name, info.areas.filter((a) => (a.floor_id ?? null) === id)])
       .filter(([, , areas]) => areas.length);
-    const toggle = (ids, on) => set(on ? [...new Set([...rooms, ...ids])] : rooms.filter((r) => !ids.includes(r)));
+    const toggle = (ids, on) => set(() => {
+      const now = this._roomInfo.room_rights[uid].rooms ?? [];
+      return on ? [...new Set([...now, ...ids])] : now.filter((r) => !ids.includes(r));
+    });
     return html`<div class="rooms" data-user=${uid}>
-      ${this._switch("all_rooms", rooms === null, this._t("all_rooms"), (on) => set(on ? null : []), uid)}
+      ${this._switch("all_rooms", rooms === null, this._t("all_rooms"), (on) => set(() => (on ? null : [])), uid)}
       ${rooms === null ? nothing : groups.map(([id, name, areas]) => {
         const ids = areas.map((a) => a.area_id);
         return html`<div class="floor">
@@ -684,16 +692,26 @@ class ResidentScenesCard extends LitElement {
           ${areas.map((a) => this._switch("room", rooms.includes(a.area_id), a.name, (on) => toggle([a.area_id], on), `${uid}:${a.area_id}`))}
         </div>`;
       })}
-      ${this._switch("house_right", right.house, this._t("house_right"), (on) => this._setRooms(uid, rooms, on), uid)}
+      ${this._switch("house_right", right.house, this._t("house_right"), (on) => this._setRooms(uid, () => ({ house: on })), uid)}
     </div>`;
   }
 
-  async _setRooms(userId, rooms, house) {
-    try {
-      await this.hass.callWS({ type: `${WS}/set_rooms`, user_id: userId, rooms, house });
-    } finally {
-      await this._loadRights();
-    }
+  // applies a tap at once to the card's own state, then sends the calls one after the other, each with
+  // the state chosen last, so two quick taps both apply (spec 3, AB3)
+  _setRooms(userId, change) {
+    const rights = this._roomInfo.room_rights;
+    this._roomInfo = { ...this._roomInfo, room_rights: { ...rights, [userId]: { ...rights[userId], ...change() } } };
+    this._roomsBusy = (this._roomsBusy ?? 0) + 1;
+    this._roomsQueue = (this._roomsQueue ?? Promise.resolve()).then(async () => {
+      const { rooms, house } = this._roomInfo.room_rights[userId];
+      try {
+        await this.hass.callWS({ type: `${WS}/set_rooms`, user_id: userId, rooms, house });
+      } catch (err) {
+        // the reload below shows what is stored
+      }
+      if (--this._roomsBusy === 0) await this._loadRights();
+    });
+    return this._roomsQueue;
   }
 
   async _setRight(userId, canEdit) {

@@ -12,7 +12,12 @@ from pathlib import Path
 
 from PIL import Image
 import pytest
-from pytest_homeassistant_custom_component.common import MockUser, async_fire_time_changed, async_mock_service
+from pytest_homeassistant_custom_component.common import (
+    MockUser,
+    async_capture_events,
+    async_fire_time_changed,
+    async_mock_service,
+)
 
 from custom_components.resident_scenes.const import (
     CONF_IMAGE_COUNT,
@@ -357,8 +362,7 @@ async def test_s10_change_during_a_delay_drops_the_rest(hass, setup, hass_ws_cli
     async_mock_service(hass, "light", "turn_on")
     cover = async_mock_service(hass, "cover", "set_cover_position")
     async_mock_service(hass, "cover", "set_cover_tilt_position")  # "open" also opens the slats
-    skipped = []
-    hass.bus.async_listen(EVENT_SKIPPED, skipped.append)
+    skipped = async_capture_events(hass, EVENT_SKIPPED)
     await hass.services.async_call("scene", "turn_on", {"entity_id": _eid(hass, sid)}, blocking=True)
     await hass.async_block_till_done()
     assert (await call(type=f"{DOMAIN}/update", scene_id=sid, edit="x", name="Later"))["success"]  # only renamed

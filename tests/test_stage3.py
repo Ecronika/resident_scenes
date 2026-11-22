@@ -8,7 +8,11 @@ import io
 
 from PIL import Image
 import pytest
-from pytest_homeassistant_custom_component.common import async_fire_time_changed, async_mock_service
+from pytest_homeassistant_custom_component.common import (
+    async_capture_events,
+    async_fire_time_changed,
+    async_mock_service,
+)
 
 from custom_components.resident_scenes.const import CONF_IMAGE_COUNT, DOMAIN, EVENT_BATCH, EVENT_CHANGED, STORAGE_KEY
 from custom_components.resident_scenes.model import ValidationError
@@ -126,8 +130,7 @@ async def test_same_entity_in_two_steps(hass, setup, hass_ws_client, resident_to
 async def test_edits_and_undo(hass, setup, hass_ws_client, resident_token):
     """One logbook entry per edit; undo takes back the latest edit; the creating edit has nothing to undo."""
     call = await ws(hass, hass_ws_client, resident_token)
-    changes = []
-    hass.bus.async_listen(EVENT_CHANGED, changes.append)
+    changes = async_capture_events(hass, EVENT_CHANGED)
     res = await call(type=f"{DOMAIN}/create", area_id="kitchen", name="New", edit="a")
     sid = res["result"]["scene_id"]
     assert (await call(**_cmd("update", sid, "a", name="Cook")))["success"]
@@ -293,17 +296,17 @@ async def test_u1_two_runs_of_one_automation(hass, setup, hass_ws_client, reside
     await call(**_cmd("add_step", first, step_type="delay"))
     await call(**_cmd("add_step", first, step_type="scene", target=room, area_id="kitchen"))
     second = await save(call, name="Night", steps=[{"mode": "scene", "scene_id": room}])
-    batches = []
-    hass.bus.async_listen(EVENT_BATCH, lambda e: batches.append(e.data["scene_id"]))
+    batches = async_capture_events(hass, EVENT_BATCH)
     async_mock_service(hass, "light", "turn_on")
     context = Context()  # one automation run
     for sid in (first, second):
         run = {"entity_id": eid(hass, sid)}
         await hass.services.async_call("scene", "turn_on", run, blocking=True, context=context)
     await hass.async_block_till_done()
-    assert batches.count(room) == 1
+    assert [e.data["scene_id"] for e in batches].count(room) == 1
     await later(hass, 6)
-    assert batches.count(room) == 2  # FIXED (U1): not skipped as "already runs for this trigger"
+    # FIXED (U1): not skipped as "already runs for this trigger"
+    assert [e.data["scene_id"] for e in batches].count(room) == 2
 
 
 async def test_u2_parallel_uploads_keep_the_limit(hass, setup, hass_client):
@@ -377,8 +380,7 @@ async def test_capture_keeps_the_sequence(hass, setup, hass_ws_client, resident_
     sid = await save(call, name="Blink", area_id="kitchen",
                      steps=[LIGHT_SET, {"entity_id": "light.kitchen", "mode": "off", "delay": 5}])
     hass.states.async_set("light.kitchen", "on", {"brightness": 99, "color_mode": "brightness"})
-    changes = []
-    hass.bus.async_listen(EVENT_CHANGED, changes.append)
+    changes = async_capture_events(hass, EVENT_CHANGED)
     await hass.services.async_call(DOMAIN, "capture", {"entity_id": eid(hass, sid)}, blocking=True)
     await hass.async_block_till_done()
     scene = setup.runtime_data.scenes[sid]

@@ -15,14 +15,16 @@ const scene = { id: "s1", name: "Abwesend", entity_id: "scene.abwesend", kind: "
   {
     const s = world({ lang: "de" });
     s.data = { ...s.data, access: false, can_edit: false };
-    for (const view of ["manage", "favorites"]) {
-      const card = await make(s, { scope: "area", area: "r1", view });
-      const root = card.shadowRoot;
-      assert.strictEqual(q(root, '[data-hint="no_access"]').textContent.trim(), "Kein Zugriff auf diesen Raum");
-      assert.strictEqual(root.querySelectorAll(".row, .tile").length, 0);
-      assert.strictEqual(q(root, '[data-action="new"]'), null);
-      card.remove();
-    }
+    const card = await make(s, { scope: "area", area: "r1", view: "manage" });
+    const root = card.shadowRoot;
+    assert.strictEqual(q(root, '[data-hint="no_access"]').textContent.trim(), "Kein Zugriff auf diesen Raum");
+    assert.strictEqual(root.querySelectorAll(".row, .tile").length, 0);
+    assert.strictEqual(q(root, '[data-action="new"]'), null);
+    card.remove();
+    // the favorites view stays invisible without the right (spec 4.7, 5.5; 0.4.1, AB4)
+    const fav = await make(s, { scope: "area", area: "r1", view: "favorites" });
+    assert.strictEqual(fav.shadowRoot.textContent.trim(), "");
+    fav.remove();
   }
 
   // ---------- house card of a limited account with the house right: run only, no edit, no new scene, no heart ----------

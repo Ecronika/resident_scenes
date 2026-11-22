@@ -12,6 +12,7 @@ import pytest
 from pytest_homeassistant_custom_component.common import (
     MockConfigEntry,
     MockUser,
+    async_capture_events,
     async_fire_time_changed,
     async_mock_service,
 )
@@ -145,8 +146,7 @@ async def test_house_scene_calls_room_scene(hass, setup, hass_ws_client, residen
     assert steps[0]["issue"] == "scene_missing"
     assert steps[0]["name"] == "Cook"
     assert ir.async_get(hass).async_get_issue(DOMAIN, f"broken_{house}")
-    skipped = []
-    hass.bus.async_listen(EVENT_SKIPPED, skipped.append)
+    skipped = async_capture_events(hass, EVENT_SKIPPED)
     await run_scene(hass, _eid(hass, house))
     assert skipped[0].data["entities"] == ["Cook"]
     assert (await call(type=f"{DOMAIN}/delete", scene_id=house))["success"]
@@ -312,8 +312,7 @@ async def test_rights_by_main_user(hass, setup, hass_ws_client, resident_token, 
     accounts = (await call(type=f"{DOMAIN}/rights"))["result"]["accounts"]
     assert {"user_id": other.id, "name": "Kid", "kind": "resident", "can_edit": True} in accounts
     assert all(a["user_id"] != hass_read_only_user.id for a in accounts)
-    events = []
-    hass.bus.async_listen(EVENT_RIGHTS, events.append)
+    events = async_capture_events(hass, EVENT_RIGHTS)
     assert (await call(type=f"{DOMAIN}/set_right", user_id=other.id, can_edit=False))["success"]
     await hass.async_block_till_done()
     assert setup.options[CONF_USERS_WITHOUT_EDIT] == [other.id]

@@ -731,7 +731,7 @@
   });
 
   // src/resident-scenes-card.js
-  var VERSION = "0.4.0";
+  var VERSION = "0.4.1";
   var WS = "resident_scenes";
   var HOUSE = "_house";
   var DOMAINS = ["light", "cover", "climate", "switch", "fan", "media_player", "scene"];
@@ -783,6 +783,7 @@
       all_house: "All in the house",
       rights_gone: "Your right to change scenes was withdrawn.",
       no_access: "No access to this room",
+      no_access_house: "No access to the house scenes",
       room_gone: "Your access to this room was withdrawn.",
       all_rooms: "All rooms",
       house_right: "may run house scenes",
@@ -921,6 +922,7 @@
       all_house: "Alle im Haus",
       rights_gone: "Ihr Recht, Szenen zu \xE4ndern, wurde entzogen.",
       no_access: "Kein Zugriff auf diesen Raum",
+      no_access_house: "Kein Zugriff auf die Haus-Szenen",
       room_gone: "Ihr Zugriff auf diesen Raum wurde entzogen.",
       all_rooms: "Alle R\xE4ume",
       house_right: "darf Haus-Szenen ausl\xF6sen",
@@ -1209,6 +1211,7 @@
     async _loadRights() {
       try {
         const r5 = await this.hass.callWS({ type: `${WS}/rights` });
+        if (this._roomsBusy) return;
         this._roomInfo = r5;
         this._rights = r5.accounts;
       } catch (err) {
@@ -1262,7 +1265,9 @@
       const outdated = this._data && this._data.version !== VERSION;
       let body = A;
       if (this._data?.access === false) {
-        body = b2`<p class="muted" role="status" data-hint="no_access">${this._t("no_access")}</p>`;
+        if (this._config.view === "favorites" && !outdated) return A;
+        const hint = this._config.scope === "house" ? "no_access_house" : "no_access";
+        body = b2`<p class="muted" role="status" data-hint="no_access">${this._t(hint)}</p>`;
       } else if (this._data && this._config.view === "favorites") {
         body = this._renderFavorites();
         if (body === A && !outdated) return A;
@@ -1471,11 +1476,14 @@
       const right = info?.room_rights?.[uid];
       if (!right) return A;
       const rooms = right.rooms;
-      const set = (next) => this._setRooms(uid, next, right.house);
+      const set = (next) => this._setRooms(uid, () => ({ rooms: next() }));
       const groups = [...info.floors.map((f3) => [f3.floor_id, f3.name]), [null, this._t("no_floor")]].map(([id, name]) => [id, name, info.areas.filter((a3) => (a3.floor_id ?? null) === id)]).filter(([, , areas]) => areas.length);
-      const toggle = (ids, on) => set(on ? [.../* @__PURE__ */ new Set([...rooms, ...ids])] : rooms.filter((r5) => !ids.includes(r5)));
+      const toggle = (ids, on) => set(() => {
+        const now = this._roomInfo.room_rights[uid].rooms ?? [];
+        return on ? [.../* @__PURE__ */ new Set([...now, ...ids])] : now.filter((r5) => !ids.includes(r5));
+      });
       return b2`<div class="rooms" data-user=${uid}>
-      ${this._switch("all_rooms", rooms === null, this._t("all_rooms"), (on) => set(on ? null : []), uid)}
+      ${this._switch("all_rooms", rooms === null, this._t("all_rooms"), (on) => set(() => on ? null : []), uid)}
       ${rooms === null ? A : groups.map(([id, name, areas]) => {
         const ids = areas.map((a3) => a3.area_id);
         return b2`<div class="floor">
@@ -1483,15 +1491,24 @@
           ${areas.map((a3) => this._switch("room", rooms.includes(a3.area_id), a3.name, (on) => toggle([a3.area_id], on), `${uid}:${a3.area_id}`))}
         </div>`;
       })}
-      ${this._switch("house_right", right.house, this._t("house_right"), (on) => this._setRooms(uid, rooms, on), uid)}
+      ${this._switch("house_right", right.house, this._t("house_right"), (on) => this._setRooms(uid, () => ({ house: on })), uid)}
     </div>`;
     }
-    async _setRooms(userId, rooms, house) {
-      try {
-        await this.hass.callWS({ type: `${WS}/set_rooms`, user_id: userId, rooms, house });
-      } finally {
-        await this._loadRights();
-      }
+    // applies a tap at once to the card's own state, then sends the calls one after the other, each with
+    // the state chosen last, so two quick taps both apply (spec 3, AB3)
+    _setRooms(userId, change) {
+      const rights = this._roomInfo.room_rights;
+      this._roomInfo = { ...this._roomInfo, room_rights: { ...rights, [userId]: { ...rights[userId], ...change() } } };
+      this._roomsBusy = (this._roomsBusy ?? 0) + 1;
+      this._roomsQueue = (this._roomsQueue ?? Promise.resolve()).then(async () => {
+        const { rooms, house } = this._roomInfo.room_rights[userId];
+        try {
+          await this.hass.callWS({ type: `${WS}/set_rooms`, user_id: userId, rooms, house });
+        } catch (err) {
+        }
+        if (--this._roomsBusy === 0) await this._loadRights();
+      });
+      return this._roomsQueue;
     }
     async _setRight(userId, canEdit) {
       try {

@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 from unittest.mock import patch
 
-from pytest_homeassistant_custom_component.common import MockConfigEntry, async_mock_service
+from pytest_homeassistant_custom_component.common import MockConfigEntry, async_capture_events, async_mock_service
 
 from custom_components.resident_scenes.const import (
     CONF_PANEL_USERS,
@@ -76,8 +76,7 @@ async def test_create_capture_and_activate(
 ) -> None:
     """A non-admin creates a scene from the current state; running it restores it."""
     call = await _ws(hass, hass_ws_client, resident_token)
-    changes = []
-    hass.bus.async_listen(EVENT_CHANGED, changes.append)
+    changes = async_capture_events(hass, EVENT_CHANGED)
 
     res = await call(type=f"{DOMAIN}/devices", area_id="kitchen")
     assert {e["entity_id"] for e in res["result"]["entities"]} == {
@@ -291,8 +290,7 @@ async def test_skipped_and_failed_steps(
         ],
     )
     await hass.async_block_till_done()
-    skipped = []
-    hass.bus.async_listen(EVENT_SKIPPED, skipped.append)
+    skipped = async_capture_events(hass, EVENT_SKIPPED)
     hass.states.async_set("cover.kitchen", "unavailable")
     hass.states.async_set("sensor.sonos_favorites", "1", {"items": {"FV:2/1": "Sport"}})
     turn_off = async_mock_service(hass, "light", "turn_off")

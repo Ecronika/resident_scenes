@@ -6,7 +6,7 @@ from datetime import timedelta
 from pathlib import Path
 
 import pytest
-from pytest_homeassistant_custom_component.common import async_mock_service
+from pytest_homeassistant_custom_component.common import async_capture_events, async_mock_service
 
 from custom_components.resident_scenes.const import DOMAIN, EVENT_SKIPPED
 from homeassistant.exceptions import HomeAssistantError
@@ -95,8 +95,7 @@ async def test_b2_unreleased_or_renamed_device(hass, setup, hass_ws_client, resi
     hass.states.async_set("light.kitchen", "off")
     turn_on = async_mock_service(hass, "light", "turn_on")
     async_mock_service(hass, "cover", "close_cover")
-    skipped = []
-    hass.bus.async_listen(EVENT_SKIPPED, skipped.append)
+    skipped = async_capture_events(hass, EVENT_SKIPPED)
     await run_scene(hass, entity_id)
     assert turn_on == []
     assert skipped[0].data["entities"] == ["light.kitchen"]
@@ -132,8 +131,7 @@ async def test_e2_failed_step_goes_to_the_logbook(hass, setup, hass_ws_client, r
         raise HomeAssistantError("bus down")
 
     hass.services.async_register("light", "turn_off", broken)
-    skipped = []
-    hass.bus.async_listen(EVENT_SKIPPED, skipped.append)
+    skipped = async_capture_events(hass, EVENT_SKIPPED)
     await run_scene(hass, entity_id)
     assert skipped[0].data["failed"] == ["light.kitchen"]
 

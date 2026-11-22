@@ -10,6 +10,7 @@ import voluptuous as vol
 
 from homeassistant.config_entries import ConfigEntry, ConfigEntryState, ConfigFlow, ConfigFlowResult, OptionsFlow
 from homeassistant.core import callback
+from homeassistant.helpers import area_registry as ar
 from homeassistant.helpers.selector import (
     LabelSelector,
     NumberSelector,
@@ -148,6 +149,11 @@ class ResidentScenesOptionsFlow(OptionsFlow):
                     options = {**self.config_entry.options, **template.get("options", {})}
                     if not inside_config(self.hass, str(options.get(CONF_IMAGE_DIR, DEFAULTS[CONF_IMAGE_DIR]))):
                         raise ValueError("image_dir outside the config folder")
+                    areas = ar.async_get(self.hass)
+                    if CONF_ROOMS in options:  # unknown room: refuse the whole template, like set_rooms
+                        if any(areas.async_get_area(a) is None for r in options[CONF_ROOMS].values() for a in r):
+                            raise ValueError("unknown room in rooms")
+                        options[CONF_ROOMS] = {u: list(dict.fromkeys(r)) for u, r in options[CONF_ROOMS].items()}
                     count = await self.config_entry.runtime_data.async_import(template)
                 except (OSError, ValueError, KeyError, TypeError, ValidationError) as err:
                     errors["base"] = "invalid_template"
@@ -174,7 +180,12 @@ def _read_template(path: str) -> dict[str, Any]:
         # the same values the settings form allows; a wrong one would break every card
         if key in LIMITS:
             valid = type(value) is int and 1 <= value <= LIMITS[key]
-        elif key in RIGHTS:
+        elif key == CONF_ROOMS:  # account -> list of area ids, as set_rooms stores it (spec 4.1)
+            valid = isinstance(value, dict) and all(
+                isinstance(u, str) and isinstance(a, list) and all(isinstance(r, str) for r in a)
+                for u, a in value.items()
+            )
+        elif key in RIGHTS or key == CONF_USERS_WITHOUT_HOUSE:
             valid = isinstance(value, list) and all(isinstance(u, str) for u in value)
         else:
             valid = key in DEFAULTS and isinstance(value, str) and bool(value)
