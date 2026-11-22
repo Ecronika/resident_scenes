@@ -12,7 +12,7 @@ from homeassistant.components.logbook import (
 )
 from homeassistant.core import Event, HomeAssistant, callback
 
-from .const import DOMAIN, EVENT_CHANGED, EVENT_RIGHTS, EVENT_SKIPPED
+from .const import DOMAIN, EVENT_ALL_OFF, EVENT_CHANGED, EVENT_RIGHTS, EVENT_SKIPPED
 
 
 @callback
@@ -52,6 +52,13 @@ def async_describe_events(
             right = f"rooms: {rooms}; " + ("may run house scenes" if data["house"] else "may not run house scenes")
         return {LOGBOOK_ENTRY_NAME: event.data["user"], LOGBOOK_ENTRY_MESSAGE: right}
 
+    @callback
+    def describe_all_off(event: Event) -> dict[str, Any]:
+        # the account is the user of the context, as for every action (spec 4.13)
+        message = "all off not run: no right for this room" if event.data["refused"] else "all off"
+        return {LOGBOOK_ENTRY_NAME: event.data["name"], LOGBOOK_ENTRY_MESSAGE: message}
+
+    async_describe_event(DOMAIN, EVENT_ALL_OFF, describe_all_off)
     async_describe_event(DOMAIN, EVENT_RIGHTS, describe_rights)
     async_describe_event(DOMAIN, EVENT_CHANGED, describe_changed)
     async_describe_event(DOMAIN, EVENT_SKIPPED, describe_skipped)

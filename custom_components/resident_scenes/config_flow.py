@@ -12,6 +12,8 @@ from homeassistant.config_entries import ConfigEntry, ConfigEntryState, ConfigFl
 from homeassistant.core import callback
 from homeassistant.helpers import area_registry as ar
 from homeassistant.helpers.selector import (
+    AreaSelector,
+    BooleanSelector,
     LabelSelector,
     NumberSelector,
     NumberSelectorConfig,
@@ -24,7 +26,10 @@ from homeassistant.helpers.selector import (
 from homeassistant.util.yaml import load_yaml_dict
 
 from .const import (
+    ALL_OFF_PARTS,
+    CONF_ALL_OFF,
     CONF_FAVORITE_SLOTS,
+    CONF_HOUSE_FAVORITE_SLOTS,
     CONF_HOUSE_SCENES,
     CONF_IMAGE_COUNT,
     CONF_IMAGE_DIR,
@@ -58,6 +63,7 @@ LIMITS = {
     CONF_IMAGE_KB: 5000,
     CONF_IMAGE_COUNT: 2000,
 }
+HOUSE_SLOTS_MAX = 12  # like the count per room; optional, so not in LIMITS (spec 4.1)
 RIGHTS = (CONF_MAIN_USERS, CONF_USERS_WITHOUT_EDIT, CONF_PANEL_USERS, CONF_PANELS_WITH_EDIT)
 CONF_TEMPLATE = "template"
 
@@ -89,7 +95,7 @@ class ResidentScenesOptionsFlow(OptionsFlow):
 
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Choose between settings and loading a template."""
-        return self.async_show_menu(step_id="init", menu_options=["settings", "template"])
+        return self.async_show_menu(step_id="init", menu_options=["settings", "all_off", "template"])
 
     async def async_step_settings(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Show all options on one page."""
@@ -100,9 +106,11 @@ class ResidentScenesOptionsFlow(OptionsFlow):
             else:
                 # room rights are managed in the card and not part of this form (spec 3)
                 options = self.config_entry.options
-                kept = {k: options[k] for k in (CONF_ROOMS, CONF_USERS_WITHOUT_HOUSE) if k in options}
+                # nor is "all off" per room, which has its own step
+                kept = {k: options[k] for k in (CONF_ROOMS, CONF_USERS_WITHOUT_HOUSE, CONF_ALL_OFF) if k in options}
+                numbers = (*LIMITS, CONF_HOUSE_FAVORITE_SLOTS)
                 return self.async_create_entry(
-                    data=kept | {k: int(v) if k in LIMITS else v for k, v in user_input.items()}
+                    data=kept | {k: int(v) if k in numbers else v for k, v in user_input.items()}
                 )
         users = [
             SelectOptionDict(value=u.id, label=u.name or u.id)
@@ -127,11 +135,39 @@ class ResidentScenesOptionsFlow(OptionsFlow):
             schema[vol.Required(key)] = NumberSelector(
                 NumberSelectorConfig(min=1, max=maximum, step=1, mode=NumberSelectorMode.BOX)
             )
+            if key == CONF_FAVORITE_SLOTS:  # left empty: the house has as many as each room
+                schema[vol.Optional(CONF_HOUSE_FAVORITE_SLOTS)] = NumberSelector(
+                    NumberSelectorConfig(min=1, max=HOUSE_SLOTS_MAX, step=1, mode=NumberSelectorMode.BOX)
+                )
         schema[vol.Required(CONF_IMAGE_DIR)] = TextSelector()
         return self.async_show_form(
             step_id="settings",
             errors=errors,
             data_schema=self.add_suggested_values_to_schema(vol.Schema(schema), {**DEFAULTS, **current}),
+        )
+
+    async def async_step_all_off(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Choose the room whose "all off" to set (spec 4.1, 4.13)."""
+        if user_input is not None:
+            self._area = user_input["area"]
+            return await self.async_step_all_off_room()
+        return self.async_show_form(step_id="all_off", data_schema=vol.Schema({vol.Required("area"): AreaSelector()}))
+
+    async def async_step_all_off_room(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Three switches: what "all off" takes in the room beside the lights."""
+        current = dict(self.config_entry.options.get(CONF_ALL_OFF, {}))
+        if user_input is not None:
+            parts = [p for p in ALL_OFF_PARTS if user_input.get(p)]
+            current.pop(self._area, None)
+            return self.async_create_entry(
+                data={**self.config_entry.options, CONF_ALL_OFF: current | ({self._area: parts} if parts else {})}
+            )
+        area = ar.async_get(self.hass).async_get_area(self._area)
+        stored = current.get(self._area, [])
+        return self.async_show_form(
+            step_id="all_off_room",
+            data_schema=vol.Schema({vol.Required(p, default=p in stored): BooleanSelector() for p in ALL_OFF_PARTS}),
+            description_placeholders={"area": area.name if area else self._area},
         )
 
     async def async_step_template(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
@@ -154,6 +190,12 @@ class ResidentScenesOptionsFlow(OptionsFlow):
                         if any(areas.async_get_area(a) is None for r in options[CONF_ROOMS].values() for a in r):
                             raise ValueError("unknown room in rooms")
                         options[CONF_ROOMS] = {u: list(dict.fromkeys(r)) for u, r in options[CONF_ROOMS].items()}
+                    if CONF_ALL_OFF in template.get("options", {}):  # replaces the stored setting as a whole
+                        if any(areas.async_get_area(a) is None for a in options[CONF_ALL_OFF]):
+                            raise ValueError("unknown room in all_off")
+                        options[CONF_ALL_OFF] = {
+                            a: [p for p in ALL_OFF_PARTS if p in parts] for a, parts in options[CONF_ALL_OFF].items()
+                        }
                     count = await self.config_entry.runtime_data.async_import(template)
                 except (OSError, ValueError, KeyError, TypeError, ValidationError) as err:
                     errors["base"] = "invalid_template"
@@ -180,6 +222,13 @@ def _read_template(path: str) -> dict[str, Any]:
         # the same values the settings form allows; a wrong one would break every card
         if key in LIMITS:
             valid = type(value) is int and 1 <= value <= LIMITS[key]
+        elif key == CONF_HOUSE_FAVORITE_SLOTS:
+            valid = type(value) is int and 1 <= value <= HOUSE_SLOTS_MAX
+        elif key == CONF_ALL_OFF:  # area id -> list of music, tv, switch (spec 4.1)
+            valid = isinstance(value, dict) and all(
+                isinstance(a, str) and isinstance(p, list) and all(x in ALL_OFF_PARTS for x in p)
+                for a, p in value.items()
+            )
         elif key == CONF_ROOMS:  # account -> list of area ids, as set_rooms stores it (spec 4.1)
             valid = isinstance(value, dict) and all(
                 isinstance(u, str) and isinstance(a, list) and all(isinstance(r, str) for r in a)

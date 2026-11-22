@@ -23,7 +23,7 @@ from homeassistant.util import dt as dt_util, slugify
 
 from .const import (
     ALLOWED_DOMAINS,
-    CONF_FAVORITE_SLOTS,
+    CONF_ALL_OFF,
     CONF_HOUSE_SCENES,
     CONF_IMAGE_COUNT,
     CONF_IMAGE_DIR,
@@ -59,6 +59,7 @@ from .model import (
     music_favorites,
     new_step_id,
     opt,
+    slot_count,
     step_issue,
 )
 
@@ -201,11 +202,16 @@ class SceneStore:
 
     @callback
     def _drop_room_rights(self, areas: set[str]) -> None:
-        """The room right of a deleted room goes (spec 3); a new room of the same id is not granted by it."""
-        rooms = opt(self.entry, CONF_ROOMS)
+        """The room right and the "all off" setting of a deleted room go (spec 3, 4.1).
+
+        A new room of the same id is not granted by them.
+        """
+        rooms, all_off = opt(self.entry, CONF_ROOMS), opt(self.entry, CONF_ALL_OFF)
         kept = {uid: [a for a in ids if a in areas] for uid, ids in rooms.items()}
-        if kept != rooms:
-            self.hass.config_entries.async_update_entry(self.entry, options={**self.entry.options, CONF_ROOMS: kept})
+        kept_off = {a: parts for a, parts in all_off.items() if a in areas}
+        if kept != rooms or kept_off != all_off:
+            options = {**self.entry.options, CONF_ROOMS: kept, CONF_ALL_OFF: kept_off}
+            self.hass.config_entries.async_update_entry(self.entry, options=options)
 
     async def _entity_updated(self, event: Event[er.EventEntityRegistryUpdatedData]) -> None:
         data = event.data
@@ -348,7 +354,7 @@ class SceneStore:
 
     def slots(self, scope: str) -> list[str | None]:
         """Return the favorite slots of a scope, padded to the configured count."""
-        count = int(opt(self.entry, CONF_FAVORITE_SLOTS))
+        count = slot_count(self.entry, scope)
         current = self.favorites.get(scope, [])[:count]
         return current + [None] * (count - len(current))
 

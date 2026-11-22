@@ -731,12 +731,16 @@
   });
 
   // src/resident-scenes-card.js
-  var VERSION = "0.4.2";
+  var VERSION = "0.5.0";
   var WS = "resident_scenes";
   var HOUSE = "_house";
   var DOMAINS = ["light", "cover", "climate", "switch", "fan", "media_player", "scene"];
   var LIVE = ["light", "cover", "switch", "fan"];
   var FLAGS = ["missing", "not_released", "other_area"];
+  var GAP = 12;
+  var MIN_TILE = 80;
+  var POWER = b2`<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor"
+  d="M16.56 5.44l-1.45 1.45A5.97 5.97 0 0 1 18 12a6 6 0 0 1-12 0c0-2.17 1.16-4.06 2.88-5.12L7.44 5.44A7.96 7.96 0 0 0 4 12a8 8 0 0 0 16 0c0-2.72-1.36-5.12-3.44-6.56M13 3h-2v10h2"/></svg>`;
   var VISIBLE_RELOAD = 5 * 60 * 1e3;
   var newId = () => Math.random().toString(36).slice(2, 10);
   var PLACEHOLDER = b2`<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor"
@@ -750,6 +754,8 @@
       play: "Play",
       played: "Played",
       play_failed: "The scene could not be played.",
+      all_off_tile: "All off",
+      all_off_failed: "All off did not run.",
       edit: "Edit",
       done: "Done",
       delete: "Delete",
@@ -890,6 +896,8 @@
       play: "Abspielen",
       played: "Ausgel\xF6st",
       play_failed: "Die Szene lie\xDF sich nicht ausl\xF6sen.",
+      all_off_tile: "Alles aus",
+      all_off_failed: "\u201EAlles aus\u201C lie\xDF sich nicht ausl\xF6sen.",
       edit: "\xC4ndern",
       done: "Fertig",
       delete: "L\xF6schen",
@@ -1030,10 +1038,20 @@
       __publicField(this, "_drafts", /* @__PURE__ */ new Map());
     }
     setConfig(config) {
-      const cfg = { scope: "area", view: "manage", ...config };
+      const views = ["manage", "list", "favorites", "rights"];
+      const cfg = {
+        scope: "area",
+        view: "manage",
+        columns: "auto",
+        tile_size: 104,
+        ...config,
+        ...config?.view === "rights" ? { scope: "house" } : {}
+      };
+      if (!views.includes(cfg.view)) throw new Error("view must be manage, list, favorites or rights");
       if (!["area", "house"].includes(cfg.scope)) throw new Error("scope must be area or house");
       if (cfg.scope === "area" && !cfg.area) throw new Error("area is required for scope: area");
-      if (!["manage", "list", "favorites"].includes(cfg.view)) throw new Error("view must be manage, list or favorites");
+      if (cfg.columns !== "auto" && !(Number.isInteger(cfg.columns) && cfg.columns > 0)) throw new Error("columns must be auto or a whole number");
+      if (!(typeof cfg.tile_size === "number" && cfg.tile_size >= MIN_TILE)) throw new Error(`tile_size must be a number of at least ${MIN_TILE}`);
       this._config = cfg;
     }
     static getStubConfig() {
@@ -1050,6 +1068,7 @@
       super.connectedCallback();
       this._ro = new ResizeObserver(([entry]) => {
         this._narrow = entry.contentRect.width < 600;
+        this._width = entry.contentRect.width;
         this.updateComplete.then(() => this._fitLines());
       });
       this._ro.observe(this);
@@ -1193,7 +1212,7 @@
         this._edit = null;
         this._notice = "rights_gone";
       }
-      if (this._rights && this._data.manages_rights) this._loadRights();
+      if ((this._rights || this._config.view === "rights") && this._data.manages_rights) this._loadRights();
       if (!this._data.manages_rights) this._rights = null;
       if (this._edit && !fromServer) this._loadDevices();
       if (this._selected) await this._loadDetail();
@@ -1251,6 +1270,18 @@
         this._notice = "play_failed";
       }
     }
+    // "all off" of the card's room (spec 4.13); the server checks the room right
+    async _allOff() {
+      const key = `all_off:${this._config.area}`;
+      try {
+        await this.hass.callService(WS, "all_off", { area_id: this._config.area });
+        if (this._notice === "all_off_failed") this._notice = null;
+        this._played = key;
+        setTimeout(() => this._played === key && (this._played = null), 1500);
+      } catch (err) {
+        this._notice = "all_off_failed";
+      }
+    }
     _err(code, detail) {
       const known = this._t(`err.${code}`) !== `err.${code}`;
       return known ? `${this._t(`err.${code}`)}${detail ? ` ${detail}` : ""}` : this._t("err.default");
@@ -1266,7 +1297,10 @@
       if (!this._config) return A;
       const outdated = this._data && this._data.version !== VERSION;
       let body = A;
-      if (this._data?.access === false) {
+      if (this._config.view === "rights") {
+        if (!this._data?.manages_rights || !this._rights) return A;
+        body = this._renderRights();
+      } else if (this._data?.access === false) {
         if (this._config.view === "favorites" && !outdated) return A;
         const hint = this._config.scope === "house" ? "no_access_house" : "no_access";
         body = b2`<p class="muted" role="status" data-hint="no_access">${this._t(hint)}</p>`;
@@ -1281,15 +1315,56 @@
       ${this._notice ? b2`<p class="error" role="alert">${this._t(this._notice)}</p>` : A} ${body}
     </div>`;
     }
+    // the scene of the tile "Alles ein": its id, tpl_<key> of an installer scene, or the entity id of a released scene
+    get _allOn() {
+      const id = this._config.all_on;
+      if (!id || this._house) return null;
+      return this._data.scenes.find((s5) => s5.id === id || s5.entity_id === id) ?? this._data.foreign_scenes.find((s5) => s5.entity_id === id && s5.area_id === this._config.area) ?? null;
+    }
+    // edge and tiles per row (spec 5.2): tile_size at most, columns or as many as fit, down to 80 px,
+    // then fewer per row; several rows are filled evenly. `side` is the column of "Alles ein" and "Alles aus".
+    _grid(count, side) {
+      const { columns, tile_size: want } = this._config;
+      const extra = side ? 1 : 0;
+      const avail = this._width ? this._width - 34 : Infinity;
+      const fits = (edge2) => Math.max(1, Math.floor((avail + GAP) / (edge2 + GAP)) - extra);
+      let perRow = Math.min(columns === "auto" ? fits(want) : columns, Math.max(1, count));
+      let edge = Math.min(want, Math.floor((avail - GAP * (perRow - 1 + extra)) / (perRow + extra)));
+      if (edge < MIN_TILE) {
+        edge = MIN_TILE;
+        perRow = Math.min(perRow, fits(MIN_TILE));
+      }
+      const rows = Math.max(1, Math.ceil(count / perRow));
+      return { edge, perRow: Math.max(1, Math.ceil(count / rows)) };
+    }
+    _tile(action, label, onClick, key, image, cls = "") {
+      const done = this._played === key;
+      return b2`<button class="tile ${cls} ${done ? "played" : ""}" data-action=${action} aria-label=${label} @click=${onClick}>
+      ${image}<span>${label}</span>${done ? b2`<b class="done" aria-hidden="true">✓</b>` : A}
+    </button>`;
+    }
     _renderFavorites() {
       const tiles = this._data.favorites.map((id) => this._scene(id)).filter(Boolean);
-      if (!tiles.length) return A;
-      return b2`<div class="tiles">
-      ${tiles.map(
-        (s5) => b2`<button class="tile" data-action="play" aria-label=${s5.name} @click=${() => this._play(s5.entity_id)}>
-          ${s5.image_url ? b2`<img src=${s5.image_url} alt="" />` : PLACEHOLDER}<span>${s5.name}</span>
-        </button>`
-      )}
+      const on = this._allOn;
+      const off = !this._house && this._config.all_off === true;
+      const side = !!(on || off);
+      if (!tiles.length && !side) return A;
+      const { edge, perRow } = this._grid(tiles.length, side);
+      const favs = tiles.length ? b2`<div class="tiles" style="grid-template-columns: repeat(${perRow}, ${edge}px)">
+          ${tiles.map((s5) => this._tile(
+        "play",
+        s5.name,
+        () => this._play(s5.entity_id),
+        s5.entity_id,
+        s5.image_url ? b2`<img src=${s5.image_url} alt="" />` : PLACEHOLDER
+      ))}
+        </div>` : A;
+      return b2`<div class="fav ${side ? "with-side" : ""}" style="--tile: ${edge}px">
+      ${side ? b2`<div class="side">
+            ${on ? this._tile("all-on", on.name, () => this._play(on.entity_id), on.entity_id, POWER, "power on") : A}
+            ${off ? this._tile("all-off", this._t("all_off_tile"), () => this._allOff(), `all_off:${this._config.area}`, POWER, "power") : A}
+          </div>` : A}
+      ${favs}
     </div>`;
     }
     _renderManage() {
@@ -1323,7 +1398,7 @@
       ${canEdit ? b2`<button class="primary wide" data-action="new" ?disabled=${full} @click=${this._create}>
               + ${this._t("new_scene")}</button>
             ${full ? b2`<p class="muted">${this._t("err.limit_reached")} (${d3.limit})</p>` : A}` : A}
-      ${manage && d3.manages_rights ? b2`<button class="wide" data-action="rights" @click=${this._openRights}>${this._t("rights")}</button>` : A}
+      ${manage && d3.manages_rights && this._config.show_rights !== false ? b2`<button class="wide" data-action="rights" @click=${this._openRights}>${this._t("rights")}</button>` : A}
       ${favs.length ? b2`<h3>${this._t("favorites")}</h3>${favs.map(row)}` : A}
       ${rest.length ? b2`<h3>${this._t("scenes")}</h3>${rest.map(row)}` : favs.length ? A : b2`<h3>${this._t("scenes")}</h3><p class="muted">${this._t("empty")}</p>`}
       ${d3.foreign_scenes.length ? b2`<h3>${this._t("other_scenes")}</h3>
@@ -1463,7 +1538,8 @@
       await this._loadRights();
     }
     _renderRights() {
-      return b2`${this._narrow ? b2`<button data-action="back" @click=${this._back}>‹ ${this._t("back")}</button>` : A}
+      const back = this._narrow && this._config.view !== "rights";
+      return b2`${back ? b2`<button data-action="back" @click=${this._back}>‹ ${this._t("back")}</button>` : A}
       <h2>${this._t("rights")}</h2>
       ${this._rights.map(
         (a3) => b2`<div class="row">
@@ -2101,7 +2177,8 @@
     _played: { state: true },
     _offline: { state: true },
     _undone: { state: true },
-    _announce: { state: true }
+    _announce: { state: true },
+    _width: { state: true }
   });
   __publicField(ResidentScenesCard, "styles", i`
     :host { display: block; }
@@ -2193,6 +2270,14 @@
     .row.drop { outline: 2px dashed var(--primary-color); }
     .tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 12px; }
     .tile { position: relative; aspect-ratio: 1; padding: 0; overflow: hidden; display: flex; align-items: flex-end; justify-content: center; }
+    /* favorites: tiles of a fixed edge, left-aligned; the free space lies between the side column and the favorites */
+    .fav { display: flex; gap: 12px; align-items: flex-start; } .fav.with-side { justify-content: space-between; }
+    .fav .tiles { justify-content: start; } .fav .tile { width: var(--tile); }
+    .fav .side { display: flex; flex-direction: column; gap: 12px; }
+    .tile.power svg { padding: 28%; } .tile.power.on svg { color: var(--primary-color); }
+    .tile.played { border-color: var(--primary-color); box-shadow: inset 0 0 0 2px var(--primary-color); }
+    .tile .done { position: absolute; top: 6px; right: 6px; width: 24px; height: 24px; border-radius: 50%; display: flex;
+      align-items: center; justify-content: center; background: var(--primary-color); color: var(--text-primary-color, #fff); }
     .tile img, .tile svg { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
     .tile svg { padding: 25%; box-sizing: border-box; color: var(--secondary-text-color); }
     .tile span { position: relative; width: 100%; padding: 24px 8px 8px; color: #fff; text-align: left; box-sizing: border-box;

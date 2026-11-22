@@ -186,6 +186,9 @@ async def _play_music(hass: HomeAssistant, step: dict[str, Any], context: Contex
     if step["music"] == "off":
         await call("media_stop", {ATTR_ENTITY_ID: entity_id})
         return
+    if step["music"] == "tv_off":  # only from "all off" (spec 4.13), never stored in a scene
+        await call("turn_off", {ATTR_ENTITY_ID: entity_id})
+        return
     # volume first, then playback (spec 4.6)
     await call("volume_set", {ATTR_ENTITY_ID: entity_id, "volume_level": step["volume"]})
     if step["music"] == "on":

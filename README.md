@@ -6,7 +6,7 @@ Scenes are stored by the integration (not in YAML), survive restarts, are part o
 
 Requires Home Assistant 2026.3 or later. The card and the settings are available in English and German.
 
-Features (version 0.4):
+Features (version 0.5):
 
 - a scene editor in the card: every input is saved at once, "Done" ends editing, "New scene" creates a scene at once
 - a scene is a sequence of steps: a trade (light, shading, climate, switches, fans, music, scenes) with its ticked
@@ -22,13 +22,16 @@ Features (version 0.4):
 - house scenes calling room scenes
 - music steps for any released media player: off, or on with volume; with Sonos also a Sonos favorite with volume
   (favorites only, no free selection)
-- favorite slots per room and for the house
+- favorite slots per room and for the house, each count set on its own; shown as square tiles in a grid that fits
+  the card's width
+- "All off" per room: switches off the released lights of the room, and per room also music, TVs and switches;
+  "All on" is a scene of the room named in the card
 - scene images from an installer image library or uploaded and cropped in the card
 - installer scenes (protected, content can be released to residents), loaded from a template
 - edit right for every account that may control devices (not read-only accounts); the installer or a main user can
   withdraw it per account in the card; panel accounts have no edit right by default
 - room rights per account: "All rooms" or a selection of rooms, and the right to run house scenes (default: all rooms,
-  house scenes allowed)
+  house scenes allowed); the permissions also as a card of their own for a settings page
 - undo of the last edit (all inputs from opening the editor to leaving it, or until ten minutes without input); an
   input that changes nothing is no edit
 - device release via a label; locks, alarm panels and configuration entities are never accepted
@@ -57,14 +60,74 @@ The card registers itself, no separate resource is needed.
 type: custom:resident-scenes-card
 scope: area        # area or house
 area: kitchen      # area id, only with scope: area
-view: manage       # manage (list and editor), list (run only) or favorites (favorite slots as tiles)
+view: manage       # manage, list, favorites or rights
+show_rights: true  # only with view: manage; false hides the button "Permissions"
+columns: auto      # only with view: favorites; tiles per row: auto or a number
+tile_size: 104     # only with view: favorites; edge of a tile in pixels (at least 80)
+all_off: false     # only with view: favorites and scope: area; true shows the tile "All off"
+all_on: tpl_kitchen_all_on  # only with view: favorites and scope: area; the scene of the tile "All on"
+```
+
+What the views are for:
+
+- `manage` is the page "Scenes" of the house and of each room: list, scene view and editor. An account without the
+  edit right gets the list and can run scenes.
+- `favorites` shows the favorite slots in use as square tiles with image and name, for the home page and the room
+  pages, also on wall panels. A tap runs the scene, and the tile shows for a moment that it ran.
+- `list` is a list to run scenes, without scene view and editor: for pages where no account should reach the editor,
+  and for the KNX scenes of a room.
+- `rights` shows only the area "Permissions" and belongs on a settings page. It needs no `scope` and no `area`. An
+  account that is neither main user nor admin sees nothing of this card.
+
+The button "Permissions" stands in every `manage` card for main users and admins; `show_rights: false` hides it in
+that card.
+
+**Favorites grid:** a tile is at most `tile_size` pixels (default 104) and stands left-aligned, not stretched. With
+`columns: auto` (default) a row holds as many tiles as fit; with a number, that many. If they do not fit, the tiles
+shrink evenly down to 80 pixels, then a row holds fewer. Several rows are filled evenly: four as two and two, five as
+three and two. With the defaults a card of 500 pixels shows four tiles in a row, a card of 360 pixels two and two.
+
+**"All on" and "All off":** in a room card, `all_off: true` shows the tile "All off" (see the action
+`resident_scenes.all_off`) and `all_on` names the scene of the tile "All on": the id of a scene of the room, for an
+installer scene from a template `tpl_` and its key, or the entity id of a released scene of the room (e.g. a KNX
+scene). The two tiles stand in a column of their own on the left, "All on" above "All off", as large as the
+favorites; free space lies between this column and the favorites. If the named scene does not exist, the tile "All
+on" is left out. The column also stands without any favorite.
+
+Home page, the house favorites in one row as far as the width allows:
+
+```yaml
+type: custom:resident-scenes-card
+scope: house
+view: favorites
+columns: auto
+tile_size: 135
+```
+
+Room page, "All on" above "All off" and four favorites as two and two:
+
+```yaml
+type: custom:resident-scenes-card
+scope: area
+area: kitchen
+view: favorites
+columns: 2
+all_off: true
+all_on: tpl_kitchen_all_on
+```
+
+Settings page:
+
+```yaml
+type: custom:resident-scenes-card
+view: rights
 ```
 
 The view `manage` shows list and scene side by side from 600 pixels card width. In a view of type "Sections" a
 section is narrower: give the card's section several columns, or use a panel view. With `view: manage` the card asks
-for the full width of its section (`columns: full`), with `list` and `favorites` for 12 columns.
+for the full width of its section (`columns: full`), with `list`, `favorites` and `rights` for 12 columns.
 
-## Action
+## Actions
 
 `resident_scenes.capture` takes over the current state of every device of the target scenes, e.g. from an
 automation on a long press of a KNX push button. Targets may be scenes, areas, devices, labels or `all`. A device
@@ -72,17 +135,36 @@ that is missing, unreachable, no longer released or moved to another room keeps 
 scenes stay. Every scene found takes over the same state: with an area or `all` as target, a scene "Dark" in that
 room afterwards switches the lights on as they are now. Automations run without a user and are allowed.
 
+`resident_scenes.all_off` with one or more areas (`area_id`) switches off all released lights of each room, e.g. from a
+KNX push button. What else it takes is set per room by the installer (options, "All off" per room, or the template):
+music (media players that are not TVs; playback stops), TVs (media players of device class `tv`; switched off) and
+switches and sockets. A room without a setting switches only its lights, also a new room. Shading, climate, fans and
+scenes are never taken. What counts is what belongs to the room and is released at the moment of the call, so a new
+light is in without any setting. A call with a user needs the room right of every target room (not the edit right)
+and switches under that account; calls without a user always run. Every run and every refused call is written to the
+logbook with the room; an unreachable device is skipped and named there. There is no such action for the house: create
+a house scene with "All in the house" off instead.
+
 ## Options
 
 **Settings:** label, main users, accounts without edit right, panel accounts, panel accounts with edit right, limits
-(scenes per area, house scenes, steps per scene, name length, favorite slots, delay, image size and count) and the
-image library folder.
+(scenes per area, house scenes, steps per scene, name length, favorite slots per area, delay, image size and count),
+favorite slots for the house (empty: as many as per area, the default, so an update changes nothing) and the image
+library folder.
+
+**"All off" per room:** choose a room, then switch on what "All off" takes there besides the lights: music, TVs,
+switches. Each room has its own setting; switching all three off returns the room to lights only. A deleted room
+drops its setting.
 
 **Load template:** a JSON or YAML file in the config folder with `options` and installer `scenes`:
 
 ```yaml
 options:
   favorite_slots: 4
+  house_favorite_slots: 8      # optional, up to 12
+  all_off:                     # per area id: what "All off" takes besides the lights
+    living_room: [music, tv, switch]
+    kitchen: [switch]
 scenes:
   - key: kitchen_cook          # stable key, a later template replaces the scene
     name: Cooking
@@ -106,8 +188,10 @@ In house scenes a group step names its room with `area_id`, and `{type: scene, a
 calls a room scene. Templates of version 0.2 with `steps` are still accepted and converted. Options get the same
 checks as the settings form. Room rights can be set too: `rooms` maps a user id to a list of area ids (an account not
 listed has all rooms), `users_without_house` lists the user ids without the house right; an unknown room refuses the
-template. The settings form does not show room rights, they are kept in the card. A template is loaded completely or
-not at all.
+template. The settings form does not show room rights, they are kept in the card. `all_off` maps an area id to a list
+of `music`, `tv` and `switch`; an unknown room or another value refuses the template. A template that names `rooms`
+or `all_off` replaces the stored value as a whole (a room not listed then switches only its lights); a template
+without them keeps it. A template is loaded completely or not at all.
 For blinds with slats give `position` and `tilt`: Home Assistant opens the slats fully if only the position is set.
 
 ## Rights and security

@@ -16,6 +16,9 @@ from homeassistant.util import color as color_util
 
 from .const import (
     ALLOWED_DOMAINS,
+    CONF_ALL_OFF,
+    CONF_FAVORITE_SLOTS,
+    CONF_HOUSE_FAVORITE_SLOTS,
     CONF_LABEL,
     CONF_MAIN_USERS,
     CONF_PANEL_USERS,
@@ -25,6 +28,7 @@ from .const import (
     CONF_USERS_WITHOUT_HOUSE,
     DEFAULTS,
     DOMAIN,
+    HOUSE,
     MUSIC_PLATFORMS,
 )
 
@@ -63,6 +67,12 @@ class ValidationError(Exception):
 def opt(entry: ConfigEntry, key: str) -> Any:
     """Return an option or its default."""
     return entry.options.get(key, DEFAULTS[key])
+
+
+def slot_count(entry: ConfigEntry, scope: str) -> int:
+    """Return the number of favorite slots of a scope; the house falls back to the count per room (spec 4.1)."""
+    count = opt(entry, CONF_FAVORITE_SLOTS)
+    return int(entry.options.get(CONF_HOUSE_FAVORITE_SLOTS, count) if scope == HOUSE else count)
 
 
 def can_control(user: User, entry: ConfigEntry | None = None) -> bool:
@@ -163,6 +173,25 @@ def entity_area(hass: HomeAssistant, ent: er.RegistryEntry) -> str | None:
     if ent.device_id and (device := dr.async_get(hass).async_get(ent.device_id)):
         return device.area_id
     return None
+
+
+def all_off_steps(hass: HomeAssistant, entry: ConfigEntry, area_id: str) -> list[dict[str, Any]]:
+    """Return the steps of "all off" in a room, from what is released there right now (spec 4.13).
+
+    Always the lights; music, TVs (device class tv) and switches only as set for the room.
+    """
+    parts = opt(entry, CONF_ALL_OFF).get(area_id, [])
+    steps: list[dict[str, Any]] = []
+    for eid, ent in allowed_entities(hass, entry).items():
+        if entity_area(hass, ent) != area_id:
+            continue
+        if ent.domain == "light" or (ent.domain == "switch" and "switch" in parts):
+            steps.append({"entity_id": eid, "state": "off", "attributes": {}})
+        elif ent.domain == "media_player":
+            tv = (ent.device_class or ent.original_device_class) == "tv"
+            if ("tv" if tv else "music") in parts:
+                steps.append({"entity_id": eid, "music": "tv_off" if tv else "off"})
+    return steps
 
 
 def music_favorites(hass: HomeAssistant) -> dict[str, str]:

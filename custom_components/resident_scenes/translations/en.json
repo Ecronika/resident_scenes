@@ -17,6 +17,7 @@
         "description": "What do you want to change?",
         "menu_options": {
           "settings": "Settings",
+          "all_off": "\"All off\" per room",
           "template": "Load template"
         }
       },
@@ -33,7 +34,8 @@
           "steps_per_scene": "Steps per scene",
           "max_delay": "Longest delay of a step (seconds)",
           "name_length": "Maximum name length",
-          "favorite_slots": "Favorite slots per area and for the house",
+          "favorite_slots": "Favorite slots per area",
+          "house_favorite_slots": "Favorite slots for the house",
           "image_dir": "Image library folder (inside the config folder)",
           "image_side": "Uploaded images: longest side (pixels)",
           "image_kb": "Uploaded images: largest file (kB)",
@@ -41,7 +43,24 @@
         },
         "data_description": {
           "label": "Lights, covers, climate, switches, fans, media players and scenes with this label (on the entity or its device) can be used in scenes.",
-          "image_dir": "An image named after an area id is the default image of that area."
+          "image_dir": "An image named after an area id is the default image of that area.",
+          "house_favorite_slots": "Empty: as many as per area."
+        }
+      },
+      "all_off": {
+        "title": "\"All off\" per room",
+        "description": "Choose a room. \"All off\" always switches off its released lights; the next page sets what it takes as well.",
+        "data": {
+          "area": "Room"
+        }
+      },
+      "all_off_room": {
+        "title": "\"All off\" in {area}",
+        "description": "Besides the released lights of the room, \"all off\" also takes the released devices chosen here.",
+        "data": {
+          "music": "Music (media players that are not TVs): playback stops",
+          "tv": "TVs (media players of device class tv): switched off",
+          "switch": "Switches and sockets: switched off"
         }
       },
       "template": {
@@ -68,11 +87,27 @@
     "capture": {
       "name": "Capture current state",
       "description": "Takes over the current state of the devices into the scene, e.g. on a long press of a push button."
+    },
+    "all_off": {
+      "name": "All off",
+      "description": "Switches off the released lights of a room, and music, TVs or switches if set for that room.",
+      "fields": {
+        "area_id": {
+          "name": "Areas",
+          "description": "The rooms to switch off."
+        }
+      }
     }
   },
   "exceptions": {
     "capture_failed": {
       "message": "The state could not be captured: {error}"
+    },
+    "not_loaded": {
+      "message": "Resident Scenes is not loaded."
+    },
+    "unknown_area": {
+      "message": "Unknown area: {area}"
     }
   }
 }

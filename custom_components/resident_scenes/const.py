@@ -3,7 +3,7 @@
 from typing import Final
 
 DOMAIN: Final = "resident_scenes"
-VERSION: Final = "0.4.2"  # keep in sync with manifest.json and the card (checked by tests)
+VERSION: Final = "0.5.0"  # keep in sync with manifest.json and the card (checked by tests)
 
 STORAGE_KEY: Final = f"{DOMAIN}.data"
 STORAGE_VERSION: Final = 3
@@ -13,6 +13,7 @@ SIGNAL_CHANGED: Final = f"{DOMAIN}_changed"
 EVENT_CHANGED: Final = f"{DOMAIN}_changed"
 EVENT_SKIPPED: Final = f"{DOMAIN}_skipped"
 EVENT_RIGHTS: Final = f"{DOMAIN}_rights"
+EVENT_ALL_OFF: Final = f"{DOMAIN}_all_off"
 EVENT_BATCH: Final = f"{DOMAIN}_batch"  # fired by the script helper, runs one batch of steps
 
 CARD_URL: Final = f"/{DOMAIN}/resident-scenes-card.js"
@@ -45,6 +46,11 @@ CONF_STEPS_PER_SCENE: Final = "steps_per_scene"
 CONF_MAX_DELAY: Final = "max_delay"
 CONF_NAME_LENGTH: Final = "name_length"
 CONF_FAVORITE_SLOTS: Final = "favorite_slots"
+# not in DEFAULTS: without it the house has as many slots as each room (spec 4.1)
+CONF_HOUSE_FAVORITE_SLOTS: Final = "house_favorite_slots"
+# area id -> parts that "all off" takes beside the lights (spec 4.13); a room not listed: lights only
+CONF_ALL_OFF: Final = "all_off"
+ALL_OFF_PARTS: Final = ("music", "tv", "switch")
 CONF_IMAGE_DIR: Final = "image_dir"
 CONF_IMAGE_SIDE: Final = "image_side"
 CONF_IMAGE_KB: Final = "image_kb"
@@ -58,6 +64,7 @@ DEFAULTS: Final[dict[str, object]] = {
     CONF_PANELS_WITH_EDIT: [],
     CONF_ROOMS: {},
     CONF_USERS_WITHOUT_HOUSE: [],
+    CONF_ALL_OFF: {},
     CONF_SCENES_PER_AREA: 20,
     CONF_HOUSE_SCENES: 30,
     CONF_STEPS_PER_SCENE: 150,

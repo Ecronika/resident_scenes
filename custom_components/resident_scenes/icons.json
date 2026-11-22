@@ -2,6 +2,9 @@
   "services": {
     "capture": {
       "service": "mdi:camera-iris"
+    },
+    "all_off": {
+      "service": "mdi:power"
     }
   }
 }

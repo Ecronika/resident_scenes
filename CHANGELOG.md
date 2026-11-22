@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.5.0
+
+Nachbesserung 4b of the functional spec (draft 0.22, sections 4.1, 4.7, 4.13, 5.1, 5.2): the views of the card and
+"All off" per room.
+
+- Favorites grid: `columns` (`auto` or a number, default `auto`) and `tile_size` (edge in pixels, default 104) per
+  card. Tiles keep their edge and stand left-aligned instead of being stretched; in a narrow card they shrink evenly
+  down to 80 pixels, then a row holds fewer; several rows are filled evenly. This changes the look of existing
+  favorites cards: with the defaults a card of 500 pixels shows four tiles of 104 pixels in a row.
+- Tiles "All on" and "All off" in a room card: `all_on` names a scene of the room, `all_off: true` shows the tile of
+  the new function; both stand in a column of their own left of the favorites, also without any favorite.
+- A tap on a tile shows for a moment that the scene ran, like the play button; a failed run is reported.
+- View `rights`: the area "Permissions" as a card of its own, without `scope` and `area`; invisible for accounts
+  that are neither main user nor admin. `show_rights: false` hides the button "Permissions" in a `manage` card
+  (default `true`, so an update changes nothing).
+- Favorite slots for the house as an option of their own (settings form and template, up to 12). Without it the house
+  has as many slots as each room, so an update changes nothing; no storage change.
+- "All off" per room and the action `resident_scenes.all_off` (field `area_id`: one or more areas): switches off the
+  released lights of the room as they are at the moment of the call, and per room also music, TVs (device class
+  `tv`) and switches and sockets, set by the installer in the options ("All off" per room) or the template (`all_off`). A call with a user
+  needs the room right, not the edit right; calls without a user always run. Runs, refused calls and skipped devices
+  go to the logbook. A deleted room drops its setting.
+- README: the four views and what they are for, the new card options with examples for the home page, a room page and
+  a settings page, the action and the options. SECURITY: the new action and template values.
+- Tests: `test_stage4b.py` (server) and `card_probe_0_5_0.cjs` (card).
+
 ## 0.4.2
 
 Hints of the 0.4.1 review.

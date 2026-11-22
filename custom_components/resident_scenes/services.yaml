@@ -3,3 +3,10 @@ capture:
     entity:
       integration: resident_scenes
       domain: scene
+all_off:
+  fields:
+    area_id:
+      required: true
+      selector:
+        area:
+          multiple: true

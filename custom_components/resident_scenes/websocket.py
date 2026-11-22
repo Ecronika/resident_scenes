@@ -15,7 +15,6 @@ from homeassistant.helpers.dispatcher import async_dispatcher_connect
 
 from .const import (
     ALLOWED_DOMAINS,
-    CONF_FAVORITE_SLOTS,
     CONF_HOUSE_SCENES,
     CONF_MAX_DELAY,
     CONF_NAME_LENGTH,
@@ -48,6 +47,7 @@ from .model import (
     may_see,
     music_favorites,
     opt,
+    slot_count,
     step_issue,
 )
 from .store import SceneStore
@@ -192,12 +192,12 @@ def ws_list(hass: HomeAssistant, connection: Connection, msg: dict[str, Any]) ->
             "is_admin": user.is_admin,
             "manages_rights": is_main_user(store.entry, user),
             "name_length": int(opt(store.entry, CONF_NAME_LENGTH)),
-            "favorite_slots": int(opt(store.entry, CONF_FAVORITE_SLOTS)),
+            "favorite_slots": slot_count(store.entry, scope),
             "max_delay": int(opt(store.entry, CONF_MAX_DELAY)),
             "max_transition": MAX_TRANSITION,
             "limit": int(opt(store.entry, CONF_SCENES_PER_AREA if area_id else CONF_HOUSE_SCENES)),
             "scenes": [_summary(store, s, user) for s in store.scenes.values() if access and s["area_id"] == area_id],
-            "favorites": store.slots(scope) if access else [None] * int(opt(store.entry, CONF_FAVORITE_SLOTS)),
+            "favorites": store.slots(scope) if access else [None] * slot_count(store.entry, scope),
             "foreign_scenes": foreign,
         },
     )

@@ -17,6 +17,7 @@
         "description": "Was möchten Sie ändern?",
         "menu_options": {
           "settings": "Einstellungen",
+          "all_off": "„Alles aus“ je Raum",
           "template": "Vorlage einspielen"
         }
       },
@@ -33,7 +34,8 @@
           "steps_per_scene": "Schritte je Szene",
           "max_delay": "Längste Verzögerung eines Schritts (Sekunden)",
           "name_length": "Längster Name",
-          "favorite_slots": "Favoritenplätze je Raum und fürs Haus",
+          "favorite_slots": "Favoritenplätze je Raum",
+          "house_favorite_slots": "Favoritenplätze fürs Haus",
           "image_dir": "Ordner der Bildbibliothek (im Konfigurationsordner)",
           "image_side": "Hochgeladene Bilder: längste Seite (Pixel)",
           "image_kb": "Hochgeladene Bilder: größte Datei (kB)",
@@ -41,7 +43,24 @@
         },
         "data_description": {
           "label": "Licht, Beschattung, Klima, Schalter, Lüfter, Mediaplayer und Szenen mit diesem Label (an der Entität oder ihrem Gerät) sind in Szenen verwendbar.",
-          "image_dir": "Ein Bild mit der Kennung eines Raums als Namen ist das Standardbild dieses Raums."
+          "image_dir": "Ein Bild mit der Kennung eines Raums als Namen ist das Standardbild dieses Raums.",
+          "house_favorite_slots": "Leer: so viele wie je Raum."
+        }
+      },
+      "all_off": {
+        "title": "„Alles aus“ je Raum",
+        "description": "Wählen Sie einen Raum. „Alles aus“ schaltet immer seine freigegebenen Leuchten aus, die nächste Seite stellt ein, was es zusätzlich erfasst.",
+        "data": {
+          "area": "Raum"
+        }
+      },
+      "all_off_room": {
+        "title": "„Alles aus“ in {area}",
+        "description": "Neben den freigegebenen Leuchten des Raums erfasst „Alles aus“ auch die hier gewählten freigegebenen Geräte.",
+        "data": {
+          "music": "Musik (Mediaplayer, die kein Fernseher sind): Wiedergabe endet",
+          "tv": "Fernseher (Mediaplayer der Geräteklasse tv): werden ausgeschaltet",
+          "switch": "Schalter und Steckdosen: werden ausgeschaltet"
         }
       },
       "template": {
@@ -68,11 +87,27 @@
     "capture": {
       "name": "Ist-Zustand übernehmen",
       "description": "Übernimmt den aktuellen Zustand der Geräte in die Szene, zum Beispiel bei langem Tastendruck."
+    },
+    "all_off": {
+      "name": "Alles aus",
+      "description": "Schaltet die freigegebenen Leuchten eines Raums aus, dazu Musik, Fernseher oder Schalter, wenn für den Raum eingestellt.",
+      "fields": {
+        "area_id": {
+          "name": "Räume",
+          "description": "Die Räume, die ausgeschaltet werden."
+        }
+      }
     }
   },
   "exceptions": {
     "capture_failed": {
       "message": "Der Zustand ließ sich nicht übernehmen: {error}"
+    },
+    "not_loaded": {
+      "message": "Resident Scenes ist nicht geladen."
+    },
+    "unknown_area": {
+      "message": "Unbekannter Raum: {area}"
     }
   }
 }

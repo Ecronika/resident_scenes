@@ -4,12 +4,16 @@ import { LitElement, html, css, nothing } from "lit";
 import { live } from "lit/directives/live.js";
 import { repeat } from "lit/directives/repeat.js";
 
-const VERSION = "0.4.2"; // must match the integration (checked by tests)
+const VERSION = "0.5.0"; // must match the integration (checked by tests)
 const WS = "resident_scenes";
 const HOUSE = "_house";
 const DOMAINS = ["light", "cover", "climate", "switch", "fan", "media_player", "scene"];
 const LIVE = ["light", "cover", "switch", "fan"]; // spec 5.4: no live adjustments for climate and music
 const FLAGS = ["missing", "not_released", "other_area"]; // stored value stays, cannot be changed (spec 4.5)
+const GAP = 12; // between favorite tiles (spec 5.2)
+const MIN_TILE = 80; // smallest edge of a favorite tile
+const POWER = html`<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor"
+  d="M16.56 5.44l-1.45 1.45A5.97 5.97 0 0 1 18 12a6 6 0 0 1-12 0c0-2.17 1.16-4.06 2.88-5.12L7.44 5.44A7.96 7.96 0 0 0 4 12a8 8 0 0 0 16 0c0-2.72-1.36-5.12-3.44-6.56M13 3h-2v10h2"/></svg>`;
 const VISIBLE_RELOAD = 5 * 60 * 1000; // wall panels turn the screen on often (review N2)
 const newId = () => Math.random().toString(36).slice(2, 10);
 const PLACEHOLDER = html`<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor"
@@ -18,7 +22,7 @@ const PLACEHOLDER = html`<svg viewBox="0 0 24 24" aria-hidden="true"><path fill=
 const I18N = {
   en: {
     new_scene: "New scene", scenes: "Scenes", other_scenes: "Other scenes", favorites: "Favorites",
-    play: "Play", played: "Played", play_failed: "The scene could not be played.", edit: "Edit", done: "Done",
+    play: "Play", played: "Played", play_failed: "The scene could not be played.", all_off_tile: "All off", all_off_failed: "All off did not run.", edit: "Edit", done: "Done",
     delete: "Delete", duplicate: "Duplicate", back: "Back", name: "Name", image: "Image", no_image: "No image",
     choose_image: "Change image", all: "All", slot: "Slot", free: "free", no_slot: "No slot", close: "Close",
     loses: "loses its place.", replace: "Replace", off: "Off", closed: "Closed", on: "On", favorite: "Favorite",
@@ -63,7 +67,7 @@ const I18N = {
   },
   de: {
     new_scene: "Neue Szene", scenes: "Szenen", other_scenes: "Weitere Szenen", favorites: "Favoriten",
-    play: "Abspielen", played: "Ausgelöst", play_failed: "Die Szene ließ sich nicht auslösen.", edit: "Ändern",
+    play: "Abspielen", played: "Ausgelöst", play_failed: "Die Szene ließ sich nicht auslösen.", all_off_tile: "Alles aus", all_off_failed: "„Alles aus“ ließ sich nicht auslösen.", edit: "Ändern",
     done: "Fertig", delete: "Löschen", duplicate: "Duplizieren", back: "Zurück", name: "Name", image: "Bild",
     no_image: "Kein Bild", choose_image: "Bild ändern", all: "Alle", slot: "Platz", free: "frei", no_slot: "Kein Platz",
     close: "Schließen", loses: "verliert seinen Platz.", replace: "Ersetzen", off: "Aus", closed: "Zu", on: "An",
@@ -130,13 +134,19 @@ class ResidentScenesCard extends LitElement {
     _offline: { state: true },
     _undone: { state: true },
     _announce: { state: true },
+    _width: { state: true },
   };
 
   setConfig(config) {
-    const cfg = { scope: "area", view: "manage", ...config };
+    const views = ["manage", "list", "favorites", "rights"];
+    // the rights view needs no scope: it asks with the house scope only for the role (spec 5.1)
+    const cfg = { scope: "area", view: "manage", columns: "auto", tile_size: 104, ...config,
+      ...(config?.view === "rights" ? { scope: "house" } : {}) };
+    if (!views.includes(cfg.view)) throw new Error("view must be manage, list, favorites or rights");
     if (!["area", "house"].includes(cfg.scope)) throw new Error("scope must be area or house");
     if (cfg.scope === "area" && !cfg.area) throw new Error("area is required for scope: area");
-    if (!["manage", "list", "favorites"].includes(cfg.view)) throw new Error("view must be manage, list or favorites");
+    if (cfg.columns !== "auto" && !(Number.isInteger(cfg.columns) && cfg.columns > 0)) throw new Error("columns must be auto or a whole number");
+    if (!(typeof cfg.tile_size === "number" && cfg.tile_size >= MIN_TILE)) throw new Error(`tile_size must be a number of at least ${MIN_TILE}`);
     this._config = cfg;
   }
 
@@ -157,6 +167,7 @@ class ResidentScenesCard extends LitElement {
     super.connectedCallback();
     this._ro = new ResizeObserver(([entry]) => {
       this._narrow = entry.contentRect.width < 600;
+      this._width = entry.contentRect.width; // the favorites grid fits itself to it (spec 5.2)
       this.updateComplete.then(() => this._fitLines()); // after a switch of the layout
     });
     this._ro.observe(this);
@@ -324,7 +335,7 @@ class ResidentScenesCard extends LitElement {
       this._edit = null;
       this._notice = "rights_gone";
     }
-    if (this._rights && this._data.manages_rights) this._loadRights();
+    if ((this._rights || this._config.view === "rights") && this._data.manages_rights) this._loadRights();
     if (!this._data.manages_rights) this._rights = null;
     if (this._edit && !fromServer) this._loadDevices(); // fresh signed URLs of the image library
     if (this._selected) await this._loadDetail();
@@ -391,6 +402,19 @@ class ResidentScenesCard extends LitElement {
     }
   }
 
+  // "all off" of the card's room (spec 4.13); the server checks the room right
+  async _allOff() {
+    const key = `all_off:${this._config.area}`;
+    try {
+      await this.hass.callService(WS, "all_off", { area_id: this._config.area });
+      if (this._notice === "all_off_failed") this._notice = null;
+      this._played = key;
+      setTimeout(() => this._played === key && (this._played = null), 1500);
+    } catch (err) {
+      this._notice = "all_off_failed";
+    }
+  }
+
   _err(code, detail) {
     const known = this._t(`err.${code}`) !== `err.${code}`;
     return known ? `${this._t(`err.${code}`)}${detail ? ` ${detail}` : ""}` : this._t("err.default");
@@ -410,7 +434,11 @@ class ResidentScenesCard extends LitElement {
     if (!this._config) return nothing;
     const outdated = this._data && this._data.version !== VERSION;
     let body = nothing;
-    if (this._data?.access === false) {
+    if (this._config.view === "rights") {
+      // only for main users and the installer; for anyone else the card shows nothing (spec 5.1)
+      if (!this._data?.manages_rights || !this._rights) return nothing;
+      body = this._renderRights();
+    } else if (this._data?.access === false) {
       // the favorites view stays invisible without the right, like one without a slot in use (spec 4.7, 5.5)
       if (this._config.view === "favorites" && !outdated) return nothing;
       const hint = this._config.scope === "house" ? "no_access_house" : "no_access";
@@ -430,15 +458,61 @@ class ResidentScenesCard extends LitElement {
     </div>`;
   }
 
+  // the scene of the tile "Alles ein": its id, tpl_<key> of an installer scene, or the entity id of a released scene
+  get _allOn() {
+    const id = this._config.all_on;
+    if (!id || this._house) return null;
+    return this._data.scenes.find((s) => s.id === id || s.entity_id === id)
+      ?? this._data.foreign_scenes.find((s) => s.entity_id === id && s.area_id === this._config.area) ?? null;
+  }
+
+  // edge and tiles per row (spec 5.2): tile_size at most, columns or as many as fit, down to 80 px,
+  // then fewer per row; several rows are filled evenly. `side` is the column of "Alles ein" and "Alles aus".
+  _grid(count, side) {
+    const { columns, tile_size: want } = this._config;
+    const extra = side ? 1 : 0;
+    // card padding and border; without a measured width (hidden card) the wanted grid is used
+    const avail = this._width ? this._width - 34 : Infinity;
+    const fits = (edge) => Math.max(1, Math.floor((avail + GAP) / (edge + GAP)) - extra);
+    let perRow = Math.min(columns === "auto" ? fits(want) : columns, Math.max(1, count));
+    let edge = Math.min(want, Math.floor((avail - GAP * (perRow - 1 + extra)) / (perRow + extra)));
+    if (edge < MIN_TILE) {
+      edge = MIN_TILE;
+      perRow = Math.min(perRow, fits(MIN_TILE));
+    }
+    const rows = Math.max(1, Math.ceil(count / perRow));
+    return { edge, perRow: Math.max(1, Math.ceil(count / rows)) };
+  }
+
+  _tile(action, label, onClick, key, image, cls = "") {
+    const done = this._played === key;
+    return html`<button class="tile ${cls} ${done ? "played" : ""}" data-action=${action} aria-label=${label} @click=${onClick}>
+      ${image}<span>${label}</span>${done ? html`<b class="done" aria-hidden="true">✓</b>` : nothing}
+    </button>`;
+  }
+
   _renderFavorites() {
     const tiles = this._data.favorites.map((id) => this._scene(id)).filter(Boolean);
-    if (!tiles.length) return nothing;
-    return html`<div class="tiles">
-      ${tiles.map(
-        (s) => html`<button class="tile" data-action="play" aria-label=${s.name} @click=${() => this._play(s.entity_id)}>
-          ${s.image_url ? html`<img src=${s.image_url} alt="" />` : PLACEHOLDER}<span>${s.name}</span>
-        </button>`
-      )}
+    const on = this._allOn;
+    const off = !this._house && this._config.all_off === true;
+    const side = !!(on || off);
+    // the column stands also without a favorite (spec 5.2)
+    if (!tiles.length && !side) return nothing;
+    const { edge, perRow } = this._grid(tiles.length, side);
+    const favs = tiles.length
+      ? html`<div class="tiles" style="grid-template-columns: repeat(${perRow}, ${edge}px)">
+          ${tiles.map((s) => this._tile("play", s.name, () => this._play(s.entity_id), s.entity_id,
+            s.image_url ? html`<img src=${s.image_url} alt="" />` : PLACEHOLDER))}
+        </div>`
+      : nothing;
+    return html`<div class="fav ${side ? "with-side" : ""}" style="--tile: ${edge}px">
+      ${side
+        ? html`<div class="side">
+            ${on ? this._tile("all-on", on.name, () => this._play(on.entity_id), on.entity_id, POWER, "power on") : nothing}
+            ${off ? this._tile("all-off", this._t("all_off_tile"), () => this._allOff(), `all_off:${this._config.area}`, POWER, "power") : nothing}
+          </div>`
+        : nothing}
+      ${favs}
     </div>`;
   }
 
@@ -481,7 +555,7 @@ class ResidentScenesCard extends LitElement {
               + ${this._t("new_scene")}</button>
             ${full ? html`<p class="muted">${this._t("err.limit_reached")} (${d.limit})</p>` : nothing}`
         : nothing}
-      ${manage && d.manages_rights
+      ${manage && d.manages_rights && this._config.show_rights !== false
         ? html`<button class="wide" data-action="rights" @click=${this._openRights}>${this._t("rights")}</button>`
         : nothing}
       ${favs.length ? html`<h3>${this._t("favorites")}</h3>${favs.map(row)}` : nothing}
@@ -658,7 +732,8 @@ class ResidentScenesCard extends LitElement {
   }
 
   _renderRights() {
-    return html`${this._narrow ? html`<button data-action="back" @click=${this._back}>‹ ${this._t("back")}</button>` : nothing}
+    const back = this._narrow && this._config.view !== "rights";
+    return html`${back ? html`<button data-action="back" @click=${this._back}>‹ ${this._t("back")}</button>` : nothing}
       <h2>${this._t("rights")}</h2>
       ${this._rights.map(
         (a) => html`<div class="row">
@@ -1451,6 +1526,14 @@ class ResidentScenesCard extends LitElement {
     .row.drop { outline: 2px dashed var(--primary-color); }
     .tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 12px; }
     .tile { position: relative; aspect-ratio: 1; padding: 0; overflow: hidden; display: flex; align-items: flex-end; justify-content: center; }
+    /* favorites: tiles of a fixed edge, left-aligned; the free space lies between the side column and the favorites */
+    .fav { display: flex; gap: 12px; align-items: flex-start; } .fav.with-side { justify-content: space-between; }
+    .fav .tiles { justify-content: start; } .fav .tile { width: var(--tile); }
+    .fav .side { display: flex; flex-direction: column; gap: 12px; }
+    .tile.power svg { padding: 28%; } .tile.power.on svg { color: var(--primary-color); }
+    .tile.played { border-color: var(--primary-color); box-shadow: inset 0 0 0 2px var(--primary-color); }
+    .tile .done { position: absolute; top: 6px; right: 6px; width: 24px; height: 24px; border-radius: 50%; display: flex;
+      align-items: center; justify-content: center; background: var(--primary-color); color: var(--text-primary-color, #fff); }
     .tile img, .tile svg { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
     .tile svg { padding: 25%; box-sizing: border-box; color: var(--secondary-text-color); }
     .tile span { position: relative; width: 100%; padding: 24px 8px 8px; color: #fff; text-align: left; box-sizing: border-box;
