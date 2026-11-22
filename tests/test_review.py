@@ -11,10 +11,8 @@ from pytest_homeassistant_custom_component.common import async_mock_service
 from custom_components.resident_scenes.const import DOMAIN, EVENT_SKIPPED
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import area_registry as ar, entity_registry as er
-from tests.conftest import run_scene
-from tests.test_init import _ws
+from tests.conftest import eid, flat, make, run_scene, save, ws as _ws
 
-SAVE = f"{DOMAIN}/save"
 LIST = f"{DOMAIN}/list"
 
 
@@ -25,12 +23,10 @@ async def _image_url(call, name):
 
 
 async def _scene(hass, call, **msg):
-    """Save a scene and return (scene_id, entity_id)."""
-    res = await call(type=SAVE, **msg)
-    assert res["success"], res
+    """Build a scene and return (scene_id, entity_id)."""
+    scene_id = await save(call, **msg)
     await hass.async_block_till_done()
-    scene_id = res["result"]["scene_id"]
-    return scene_id, er.async_get(hass).async_get_entity_id("scene", DOMAIN, scene_id)
+    return scene_id, eid(hass, scene_id)
 
 
 async def _settings(hass, entry):
@@ -61,8 +57,8 @@ async def library(hass):
 
 async def test_b1_deleted_area_moves_scenes_to_house(hass, setup, hass_ws_client, resident_token):
     call = await _ws(hass, hass_ws_client, resident_token)
-    await _scene(hass, call, name="Cook", steps=[])  # house scene with the same name
-    scene_id, entity_id = await _scene(hass, call, name="Cook", area_id="kitchen", steps=[])
+    await _scene(hass, call, name="Cook")  # house scene with the same name
+    scene_id, entity_id = await _scene(hass, call, name="Cook", area_id="kitchen")
     assert (await call(type=f"{DOMAIN}/set_favorite", scope="kitchen", slot=0, scene_id=scene_id))["success"]
 
     ar.async_get(hass).async_delete("kitchen")
@@ -72,15 +68,15 @@ async def test_b1_deleted_area_moves_scenes_to_house(hass, setup, hass_ws_client
     assert scene["name"] == "Cook (2)"
     assert "kitchen" not in setup.runtime_data.favorites
 
-    await _scene(hass, call, name="Other", steps=[])  # any change runs sync()
+    await _scene(hass, call, name="Other")  # any change runs sync()
     assert er.async_get(hass).async_get(entity_id).area_id is None
-    res = await call(type=SAVE, scene_id=scene_id, version=scene["version"], name="Cook 2", steps=[])
+    res = await call(type=f"{DOMAIN}/update", scene_id=scene_id, edit="x", name="Cook 2")
     assert res["success"]
 
 
 async def test_b1_area_deleted_while_stopped(hass, setup, hass_ws_client, resident_token):
     call = await _ws(hass, hass_ws_client, resident_token)
-    scene_id, _ = await _scene(hass, call, name="Cook", area_id="kitchen", steps=[])
+    scene_id, _ = await _scene(hass, call, name="Cook", area_id="kitchen")
     await hass.config_entries.async_unload(setup.entry_id)
     ar.async_get(hass).async_delete("kitchen")
     assert await hass.config_entries.async_setup(setup.entry_id)
@@ -104,11 +100,13 @@ async def test_b2_unreleased_or_renamed_device(hass, setup, hass_ws_client, resi
     await run_scene(hass, entity_id)
     assert turn_on == []
     assert skipped[0].data["entities"] == ["light.kitchen"]
-    keep = [{"entity_id": "light.kitchen", "mode": "keep"}, {"entity_id": "cover.kitchen", "mode": "keep"}]
-    res = await call(type=SAVE, scene_id=scene_id, version=1, name="Dinner", area_id="kitchen", steps=keep)
-    assert res["success"]
-    res = await call(type=SAVE, scene_id=scene_id, version=2, name="Dinner", area_id="kitchen",
-                     steps=[{"entity_id": "light.kitchen", "mode": "off"}])
+    res = await call(type=f"{DOMAIN}/update", scene_id=scene_id, edit="x", name="Dinner")
+    assert res["success"]  # other inputs keep the stored entry
+    light_step = setup.runtime_data.scenes[scene_id]["sequence"][0]
+    detail = (await call(type=f"{DOMAIN}/scene", scene_id=scene_id))["result"]
+    assert detail["sequence"][0]["entries"][0]["issue"] == "not_released"
+    res = await call(type=f"{DOMAIN}/set_entry", scene_id=scene_id, edit="x", step_id=light_step["id"],
+                     entity_id="light.kitchen", mode="off")
     assert res["error"]["code"] == "entity_not_allowed"
     assert res["error"]["message"] == "entity_not_allowed: light.kitchen"  # the card names the device
     ent_reg.async_update_entity("light.kitchen", labels={"resident_scenes"})
@@ -116,10 +114,11 @@ async def test_b2_unreleased_or_renamed_device(hass, setup, hass_ws_client, resi
     # b) the installer renames an entity id: the steps follow
     ent_reg.async_update_entity("cover.kitchen", new_entity_id="cover.kueche")
     await hass.async_block_till_done()
-    stored = [s["entity_id"] for s in setup.runtime_data.scenes[scene_id]["steps"]]
+    stored = [s["entity_id"] for s in flat(setup.runtime_data.scenes[scene_id])]
     assert stored == ["light.kitchen", "cover.kueche"]
-    keep = [{"entity_id": "light.kitchen", "mode": "keep"}, {"entity_id": "cover.kueche", "mode": "keep"}]
-    res = await call(type=SAVE, scene_id=scene_id, version=3, name="Dinner", area_id="kitchen", steps=keep)
+    cover_step = setup.runtime_data.scenes[scene_id]["sequence"][1]["id"]
+    res = await call(type=f"{DOMAIN}/set_entry", scene_id=scene_id, edit="x", step_id=cover_step,
+                     entity_id="cover.kueche", mode="off")
     assert res["success"], res
 
 
@@ -153,7 +152,7 @@ async def test_k1_read_only_account_may_not_edit(
 ):
     read_only = await _ws(hass, hass_ws_client, hass_read_only_access_token)
     assert (await read_only(type=LIST, scope="_house"))["result"]["can_edit"] is False
-    assert (await read_only(type=SAVE, name="X", steps=[]))["error"]["code"] == "unauthorized"
+    assert (await make(read_only, name="X"))["error"]["code"] == "unauthorized"
 
 
 async def test_k1_resident_runs_with_own_account(hass, setup, hass_ws_client, resident_token, hass_read_only_user):
@@ -207,7 +206,7 @@ async def test_k3_image_dir_and_file_names(hass, setup, hass_ws_client, resident
 async def test_k4_area_scene_rejects_devices_of_other_areas(hass, setup, hass_ws_client, resident_token):
     call = await _ws(hass, hass_ws_client, resident_token)
     hall = [{"entity_id": "light.hall", "mode": "capture"}]
-    res = await call(type=SAVE, name="Evening", area_id="kitchen", steps=hall)
+    res = await make(call, name="Evening", area_id="kitchen", steps=hall)
     assert res["error"]["code"] == "entity_not_allowed"
 
 

@@ -21,10 +21,10 @@
     }
     get styleSheet() {
       let t5 = this.o;
-      const s4 = this.t;
+      const s5 = this.t;
       if (e && void 0 === t5) {
-        const e5 = void 0 !== s4 && 1 === s4.length;
-        e5 && (t5 = o.get(s4)), void 0 === t5 && ((this.o = t5 = new CSSStyleSheet()).replaceSync(this.cssText), e5 && o.set(s4, t5));
+        const e5 = void 0 !== s5 && 1 === s5.length;
+        e5 && (t5 = o.get(s5)), void 0 === t5 && ((this.o = t5 = new CSSStyleSheet()).replaceSync(this.cssText), e5 && o.set(s5, t5));
       }
       return t5;
     }
@@ -34,23 +34,23 @@
   };
   var r = (t5) => new n("string" == typeof t5 ? t5 : t5 + "", void 0, s);
   var i = (t5, ...e5) => {
-    const o5 = 1 === t5.length ? t5[0] : e5.reduce((e6, s4, o6) => e6 + ((t6) => {
+    const o5 = 1 === t5.length ? t5[0] : e5.reduce((e6, s5, o6) => e6 + ((t6) => {
       if (true === t6._$cssResult$) return t6.cssText;
       if ("number" == typeof t6) return t6;
       throw Error("Value passed to 'css' function must be a 'css' function result: " + t6 + ". Use 'unsafeCSS' to pass non-literal values, but take care to ensure page security.");
-    })(s4) + t5[o6 + 1], t5[0]);
+    })(s5) + t5[o6 + 1], t5[0]);
     return new n(o5, t5, s);
   };
-  var S = (s4, o5) => {
-    if (e) s4.adoptedStyleSheets = o5.map((t5) => t5 instanceof CSSStyleSheet ? t5 : t5.styleSheet);
+  var S = (s5, o5) => {
+    if (e) s5.adoptedStyleSheets = o5.map((t5) => t5 instanceof CSSStyleSheet ? t5 : t5.styleSheet);
     else for (const e5 of o5) {
       const o6 = document.createElement("style"), n4 = t.litNonce;
-      void 0 !== n4 && o6.setAttribute("nonce", n4), o6.textContent = e5.cssText, s4.appendChild(o6);
+      void 0 !== n4 && o6.setAttribute("nonce", n4), o6.textContent = e5.cssText, s5.appendChild(o6);
     }
   };
   var c = e ? (t5) => t5 : (t5) => t5 instanceof CSSStyleSheet ? ((t6) => {
     let e5 = "";
-    for (const s4 of t6.cssRules) e5 += s4.cssText;
+    for (const s5 of t6.cssRules) e5 += s5.cssText;
     return r(e5);
   })(t5) : t5;
 
@@ -65,9 +65,9 @@
   var c2 = a.trustedTypes;
   var l = c2 ? c2.emptyScript : "";
   var p = a.reactiveElementPolyfillSupport;
-  var d = (t5, s4) => t5;
-  var u = { toAttribute(t5, s4) {
-    switch (s4) {
+  var d = (t5, s5) => t5;
+  var u = { toAttribute(t5, s5) {
+    switch (s5) {
       case Boolean:
         t5 = t5 ? l : null;
         break;
@@ -76,26 +76,26 @@
         t5 = null == t5 ? t5 : JSON.stringify(t5);
     }
     return t5;
-  }, fromAttribute(t5, s4) {
-    let i6 = t5;
-    switch (s4) {
+  }, fromAttribute(t5, s5) {
+    let i7 = t5;
+    switch (s5) {
       case Boolean:
-        i6 = null !== t5;
+        i7 = null !== t5;
         break;
       case Number:
-        i6 = null === t5 ? null : Number(t5);
+        i7 = null === t5 ? null : Number(t5);
         break;
       case Object:
       case Array:
         try {
-          i6 = JSON.parse(t5);
+          i7 = JSON.parse(t5);
         } catch (t6) {
-          i6 = null;
+          i7 = null;
         }
     }
-    return i6;
+    return i7;
   } };
-  var f = (t5, s4) => !i2(t5, s4);
+  var f = (t5, s5) => !i2(t5, s5);
   var b = { attribute: true, type: String, converter: u, reflect: false, useDefault: false, hasChanged: f };
   Symbol.metadata ??= /* @__PURE__ */ Symbol("metadata"), a.litPropertyMetadata ??= /* @__PURE__ */ new WeakMap();
   var y = class extends HTMLElement {
@@ -105,21 +105,21 @@
     static get observedAttributes() {
       return this.finalize(), this._$Eh && [...this._$Eh.keys()];
     }
-    static createProperty(t5, s4 = b) {
-      if (s4.state && (s4.attribute = false), this._$Ei(), this.prototype.hasOwnProperty(t5) && ((s4 = Object.create(s4)).wrapped = true), this.elementProperties.set(t5, s4), !s4.noAccessor) {
-        const i6 = /* @__PURE__ */ Symbol(), h3 = this.getPropertyDescriptor(t5, i6, s4);
-        void 0 !== h3 && e2(this.prototype, t5, h3);
+    static createProperty(t5, s5 = b) {
+      if (s5.state && (s5.attribute = false), this._$Ei(), this.prototype.hasOwnProperty(t5) && ((s5 = Object.create(s5)).wrapped = true), this.elementProperties.set(t5, s5), !s5.noAccessor) {
+        const i7 = /* @__PURE__ */ Symbol(), h4 = this.getPropertyDescriptor(t5, i7, s5);
+        void 0 !== h4 && e2(this.prototype, t5, h4);
       }
     }
-    static getPropertyDescriptor(t5, s4, i6) {
+    static getPropertyDescriptor(t5, s5, i7) {
       const { get: e5, set: r5 } = h(this.prototype, t5) ?? { get() {
-        return this[s4];
+        return this[s5];
       }, set(t6) {
-        this[s4] = t6;
+        this[s5] = t6;
       } };
-      return { get: e5, set(s5) {
-        const h3 = e5?.call(this);
-        r5?.call(this, s5), this.requestUpdate(t5, h3, i6);
+      return { get: e5, set(s6) {
+        const h4 = e5?.call(this);
+        r5?.call(this, s6), this.requestUpdate(t5, h4, i7);
       }, configurable: true, enumerable: true };
     }
     static getPropertyOptions(t5) {
@@ -133,32 +133,32 @@
     static finalize() {
       if (this.hasOwnProperty(d("finalized"))) return;
       if (this.finalized = true, this._$Ei(), this.hasOwnProperty(d("properties"))) {
-        const t6 = this.properties, s4 = [...r2(t6), ...o2(t6)];
-        for (const i6 of s4) this.createProperty(i6, t6[i6]);
+        const t6 = this.properties, s5 = [...r2(t6), ...o2(t6)];
+        for (const i7 of s5) this.createProperty(i7, t6[i7]);
       }
       const t5 = this[Symbol.metadata];
       if (null !== t5) {
-        const s4 = litPropertyMetadata.get(t5);
-        if (void 0 !== s4) for (const [t6, i6] of s4) this.elementProperties.set(t6, i6);
+        const s5 = litPropertyMetadata.get(t5);
+        if (void 0 !== s5) for (const [t6, i7] of s5) this.elementProperties.set(t6, i7);
       }
       this._$Eh = /* @__PURE__ */ new Map();
-      for (const [t6, s4] of this.elementProperties) {
-        const i6 = this._$Eu(t6, s4);
-        void 0 !== i6 && this._$Eh.set(i6, t6);
+      for (const [t6, s5] of this.elementProperties) {
+        const i7 = this._$Eu(t6, s5);
+        void 0 !== i7 && this._$Eh.set(i7, t6);
       }
       this.elementStyles = this.finalizeStyles(this.styles);
     }
-    static finalizeStyles(s4) {
-      const i6 = [];
-      if (Array.isArray(s4)) {
-        const e5 = new Set(s4.flat(1 / 0).reverse());
-        for (const s5 of e5) i6.unshift(c(s5));
-      } else void 0 !== s4 && i6.push(c(s4));
-      return i6;
+    static finalizeStyles(s5) {
+      const i7 = [];
+      if (Array.isArray(s5)) {
+        const e5 = new Set(s5.flat(1 / 0).reverse());
+        for (const s6 of e5) i7.unshift(c(s6));
+      } else void 0 !== s5 && i7.push(c(s5));
+      return i7;
     }
-    static _$Eu(t5, s4) {
-      const i6 = s4.attribute;
-      return false === i6 ? void 0 : "string" == typeof i6 ? i6 : "string" == typeof t5 ? t5.toLowerCase() : void 0;
+    static _$Eu(t5, s5) {
+      const i7 = s5.attribute;
+      return false === i7 ? void 0 : "string" == typeof i7 ? i7 : "string" == typeof t5 ? t5.toLowerCase() : void 0;
     }
     constructor() {
       super(), this._$Ep = void 0, this.isUpdatePending = false, this.hasUpdated = false, this._$Em = null, this._$Ev();
@@ -173,8 +173,8 @@
       this._$EO?.delete(t5);
     }
     _$E_() {
-      const t5 = /* @__PURE__ */ new Map(), s4 = this.constructor.elementProperties;
-      for (const i6 of s4.keys()) this.hasOwnProperty(i6) && (t5.set(i6, this[i6]), delete this[i6]);
+      const t5 = /* @__PURE__ */ new Map(), s5 = this.constructor.elementProperties;
+      for (const i7 of s5.keys()) this.hasOwnProperty(i7) && (t5.set(i7, this[i7]), delete this[i7]);
       t5.size > 0 && (this._$Ep = t5);
     }
     createRenderRoot() {
@@ -189,35 +189,35 @@
     disconnectedCallback() {
       this._$EO?.forEach((t5) => t5.hostDisconnected?.());
     }
-    attributeChangedCallback(t5, s4, i6) {
-      this._$AK(t5, i6);
+    attributeChangedCallback(t5, s5, i7) {
+      this._$AK(t5, i7);
     }
-    _$ET(t5, s4) {
-      const i6 = this.constructor.elementProperties.get(t5), e5 = this.constructor._$Eu(t5, i6);
-      if (void 0 !== e5 && true === i6.reflect) {
-        const h3 = (void 0 !== i6.converter?.toAttribute ? i6.converter : u).toAttribute(s4, i6.type);
-        this._$Em = t5, null == h3 ? this.removeAttribute(e5) : this.setAttribute(e5, h3), this._$Em = null;
+    _$ET(t5, s5) {
+      const i7 = this.constructor.elementProperties.get(t5), e5 = this.constructor._$Eu(t5, i7);
+      if (void 0 !== e5 && true === i7.reflect) {
+        const h4 = (void 0 !== i7.converter?.toAttribute ? i7.converter : u).toAttribute(s5, i7.type);
+        this._$Em = t5, null == h4 ? this.removeAttribute(e5) : this.setAttribute(e5, h4), this._$Em = null;
       }
     }
-    _$AK(t5, s4) {
-      const i6 = this.constructor, e5 = i6._$Eh.get(t5);
+    _$AK(t5, s5) {
+      const i7 = this.constructor, e5 = i7._$Eh.get(t5);
       if (void 0 !== e5 && this._$Em !== e5) {
-        const t6 = i6.getPropertyOptions(e5), h3 = "function" == typeof t6.converter ? { fromAttribute: t6.converter } : void 0 !== t6.converter?.fromAttribute ? t6.converter : u;
+        const t6 = i7.getPropertyOptions(e5), h4 = "function" == typeof t6.converter ? { fromAttribute: t6.converter } : void 0 !== t6.converter?.fromAttribute ? t6.converter : u;
         this._$Em = e5;
-        const r5 = h3.fromAttribute(s4, t6.type);
+        const r5 = h4.fromAttribute(s5, t6.type);
         this[e5] = r5 ?? this._$Ej?.get(e5) ?? r5, this._$Em = null;
       }
     }
-    requestUpdate(t5, s4, i6, e5 = false, h3) {
+    requestUpdate(t5, s5, i7, e5 = false, h4) {
       if (void 0 !== t5) {
         const r5 = this.constructor;
-        if (false === e5 && (h3 = this[t5]), i6 ??= r5.getPropertyOptions(t5), !((i6.hasChanged ?? f)(h3, s4) || i6.useDefault && i6.reflect && h3 === this._$Ej?.get(t5) && !this.hasAttribute(r5._$Eu(t5, i6)))) return;
-        this.C(t5, s4, i6);
+        if (false === e5 && (h4 = this[t5]), i7 ??= r5.getPropertyOptions(t5), !((i7.hasChanged ?? f)(h4, s5) || i7.useDefault && i7.reflect && h4 === this._$Ej?.get(t5) && !this.hasAttribute(r5._$Eu(t5, i7)))) return;
+        this.C(t5, s5, i7);
       }
       false === this.isUpdatePending && (this._$ES = this._$EP());
     }
-    C(t5, s4, { useDefault: i6, reflect: e5, wrapped: h3 }, r5) {
-      i6 && !(this._$Ej ??= /* @__PURE__ */ new Map()).has(t5) && (this._$Ej.set(t5, r5 ?? s4 ?? this[t5]), true !== h3 || void 0 !== r5) || (this._$AL.has(t5) || (this.hasUpdated || i6 || (s4 = void 0), this._$AL.set(t5, s4)), true === e5 && this._$Em !== t5 && (this._$Eq ??= /* @__PURE__ */ new Set()).add(t5));
+    C(t5, s5, { useDefault: i7, reflect: e5, wrapped: h4 }, r5) {
+      i7 && !(this._$Ej ??= /* @__PURE__ */ new Map()).has(t5) && (this._$Ej.set(t5, r5 ?? s5 ?? this[t5]), true !== h4 || void 0 !== r5) || (this._$AL.has(t5) || (this.hasUpdated || i7 || (s5 = void 0), this._$AL.set(t5, s5)), true === e5 && this._$Em !== t5 && (this._$Eq ??= /* @__PURE__ */ new Set()).add(t5));
     }
     async _$EP() {
       this.isUpdatePending = true;
@@ -236,23 +236,23 @@
       if (!this.isUpdatePending) return;
       if (!this.hasUpdated) {
         if (this.renderRoot ??= this.createRenderRoot(), this._$Ep) {
-          for (const [t7, s5] of this._$Ep) this[t7] = s5;
+          for (const [t7, s6] of this._$Ep) this[t7] = s6;
           this._$Ep = void 0;
         }
         const t6 = this.constructor.elementProperties;
-        if (t6.size > 0) for (const [s5, i6] of t6) {
-          const { wrapped: t7 } = i6, e5 = this[s5];
-          true !== t7 || this._$AL.has(s5) || void 0 === e5 || this.C(s5, void 0, i6, e5);
+        if (t6.size > 0) for (const [s6, i7] of t6) {
+          const { wrapped: t7 } = i7, e5 = this[s6];
+          true !== t7 || this._$AL.has(s6) || void 0 === e5 || this.C(s6, void 0, i7, e5);
         }
       }
       let t5 = false;
-      const s4 = this._$AL;
+      const s5 = this._$AL;
       try {
-        t5 = this.shouldUpdate(s4), t5 ? (this.willUpdate(s4), this._$EO?.forEach((t6) => t6.hostUpdate?.()), this.update(s4)) : this._$EM();
-      } catch (s5) {
-        throw t5 = false, this._$EM(), s5;
+        t5 = this.shouldUpdate(s5), t5 ? (this.willUpdate(s5), this._$EO?.forEach((t6) => t6.hostUpdate?.()), this.update(s5)) : this._$EM();
+      } catch (s6) {
+        throw t5 = false, this._$EM(), s6;
       }
-      t5 && this._$AE(s4);
+      t5 && this._$AE(s5);
     }
     willUpdate(t5) {
     }
@@ -309,7 +309,7 @@
   var g = /'/g;
   var $ = /"/g;
   var y2 = /^(?:script|style|textarea|title)$/i;
-  var x = (t5) => (i6, ...s4) => ({ _$litType$: t5, strings: i6, values: s4 });
+  var x = (t5) => (i7, ...s5) => ({ _$litType$: t5, strings: i7, values: s5 });
   var b2 = x(1);
   var w = x(2);
   var T = x(3);
@@ -317,44 +317,44 @@
   var A = /* @__PURE__ */ Symbol.for("lit-nothing");
   var C = /* @__PURE__ */ new WeakMap();
   var P = l2.createTreeWalker(l2, 129);
-  function V(t5, i6) {
+  function V(t5, i7) {
     if (!u2(t5) || !t5.hasOwnProperty("raw")) throw Error("invalid template strings array");
-    return void 0 !== e3 ? e3.createHTML(i6) : i6;
+    return void 0 !== e3 ? e3.createHTML(i7) : i7;
   }
-  var N = (t5, i6) => {
-    const s4 = t5.length - 1, e5 = [];
-    let n4, l4 = 2 === i6 ? "<svg>" : 3 === i6 ? "<math>" : "", c4 = v;
-    for (let i7 = 0; i7 < s4; i7++) {
-      const s5 = t5[i7];
-      let a3, u3, d3 = -1, f3 = 0;
-      for (; f3 < s5.length && (c4.lastIndex = f3, u3 = c4.exec(s5), null !== u3); ) f3 = c4.lastIndex, c4 === v ? "!--" === u3[1] ? c4 = _ : void 0 !== u3[1] ? c4 = m : void 0 !== u3[2] ? (y2.test(u3[2]) && (n4 = RegExp("</" + u3[2], "g")), c4 = p2) : void 0 !== u3[3] && (c4 = p2) : c4 === p2 ? ">" === u3[0] ? (c4 = n4 ?? v, d3 = -1) : void 0 === u3[1] ? d3 = -2 : (d3 = c4.lastIndex - u3[2].length, a3 = u3[1], c4 = void 0 === u3[3] ? p2 : '"' === u3[3] ? $ : g) : c4 === $ || c4 === g ? c4 = p2 : c4 === _ || c4 === m ? c4 = v : (c4 = p2, n4 = void 0);
-      const x2 = c4 === p2 && t5[i7 + 1].startsWith("/>") ? " " : "";
-      l4 += c4 === v ? s5 + r3 : d3 >= 0 ? (e5.push(a3), s5.slice(0, d3) + h2 + s5.slice(d3) + o3 + x2) : s5 + o3 + (-2 === d3 ? i7 : x2);
+  var N = (t5, i7) => {
+    const s5 = t5.length - 1, e5 = [];
+    let n4, l4 = 2 === i7 ? "<svg>" : 3 === i7 ? "<math>" : "", c5 = v;
+    for (let i8 = 0; i8 < s5; i8++) {
+      const s6 = t5[i8];
+      let a3, u5, d3 = -1, f3 = 0;
+      for (; f3 < s6.length && (c5.lastIndex = f3, u5 = c5.exec(s6), null !== u5); ) f3 = c5.lastIndex, c5 === v ? "!--" === u5[1] ? c5 = _ : void 0 !== u5[1] ? c5 = m : void 0 !== u5[2] ? (y2.test(u5[2]) && (n4 = RegExp("</" + u5[2], "g")), c5 = p2) : void 0 !== u5[3] && (c5 = p2) : c5 === p2 ? ">" === u5[0] ? (c5 = n4 ?? v, d3 = -1) : void 0 === u5[1] ? d3 = -2 : (d3 = c5.lastIndex - u5[2].length, a3 = u5[1], c5 = void 0 === u5[3] ? p2 : '"' === u5[3] ? $ : g) : c5 === $ || c5 === g ? c5 = p2 : c5 === _ || c5 === m ? c5 = v : (c5 = p2, n4 = void 0);
+      const x2 = c5 === p2 && t5[i8 + 1].startsWith("/>") ? " " : "";
+      l4 += c5 === v ? s6 + r3 : d3 >= 0 ? (e5.push(a3), s6.slice(0, d3) + h2 + s6.slice(d3) + o3 + x2) : s6 + o3 + (-2 === d3 ? i8 : x2);
     }
-    return [V(t5, l4 + (t5[s4] || "<?>") + (2 === i6 ? "</svg>" : 3 === i6 ? "</math>" : "")), e5];
+    return [V(t5, l4 + (t5[s5] || "<?>") + (2 === i7 ? "</svg>" : 3 === i7 ? "</math>" : "")), e5];
   };
   var S2 = class _S {
-    constructor({ strings: t5, _$litType$: i6 }, e5) {
+    constructor({ strings: t5, _$litType$: i7 }, e5) {
       let r5;
       this.parts = [];
       let l4 = 0, a3 = 0;
-      const u3 = t5.length - 1, d3 = this.parts, [f3, v2] = N(t5, i6);
-      if (this.el = _S.createElement(f3, e5), P.currentNode = this.el.content, 2 === i6 || 3 === i6) {
+      const u5 = t5.length - 1, d3 = this.parts, [f3, v3] = N(t5, i7);
+      if (this.el = _S.createElement(f3, e5), P.currentNode = this.el.content, 2 === i7 || 3 === i7) {
         const t6 = this.el.content.firstChild;
         t6.replaceWith(...t6.childNodes);
       }
-      for (; null !== (r5 = P.nextNode()) && d3.length < u3; ) {
+      for (; null !== (r5 = P.nextNode()) && d3.length < u5; ) {
         if (1 === r5.nodeType) {
           if (r5.hasAttributes()) for (const t6 of r5.getAttributeNames()) if (t6.endsWith(h2)) {
-            const i7 = v2[a3++], s4 = r5.getAttribute(t6).split(o3), e6 = /([.?@])?(.*)/.exec(i7);
-            d3.push({ type: 1, index: l4, name: e6[2], strings: s4, ctor: "." === e6[1] ? I : "?" === e6[1] ? L : "@" === e6[1] ? z : H }), r5.removeAttribute(t6);
+            const i8 = v3[a3++], s5 = r5.getAttribute(t6).split(o3), e6 = /([.?@])?(.*)/.exec(i8);
+            d3.push({ type: 1, index: l4, name: e6[2], strings: s5, ctor: "." === e6[1] ? I : "?" === e6[1] ? L : "@" === e6[1] ? z : H }), r5.removeAttribute(t6);
           } else t6.startsWith(o3) && (d3.push({ type: 6, index: l4 }), r5.removeAttribute(t6));
           if (y2.test(r5.tagName)) {
-            const t6 = r5.textContent.split(o3), i7 = t6.length - 1;
-            if (i7 > 0) {
+            const t6 = r5.textContent.split(o3), i8 = t6.length - 1;
+            if (i8 > 0) {
               r5.textContent = s2 ? s2.emptyScript : "";
-              for (let s4 = 0; s4 < i7; s4++) r5.append(t6[s4], c3()), P.nextNode(), d3.push({ type: 2, index: ++l4 });
-              r5.append(t6[i7], c3());
+              for (let s5 = 0; s5 < i8; s5++) r5.append(t6[s5], c3()), P.nextNode(), d3.push({ type: 2, index: ++l4 });
+              r5.append(t6[i8], c3());
             }
           }
         } else if (8 === r5.nodeType) if (r5.data === n3) d3.push({ type: 2, index: l4 });
@@ -365,20 +365,20 @@
         l4++;
       }
     }
-    static createElement(t5, i6) {
-      const s4 = l2.createElement("template");
-      return s4.innerHTML = t5, s4;
+    static createElement(t5, i7) {
+      const s5 = l2.createElement("template");
+      return s5.innerHTML = t5, s5;
     }
   };
-  function M(t5, i6, s4 = t5, e5) {
-    if (i6 === E) return i6;
-    let h3 = void 0 !== e5 ? s4._$Co?.[e5] : s4._$Cl;
-    const o5 = a2(i6) ? void 0 : i6._$litDirective$;
-    return h3?.constructor !== o5 && (h3?._$AO?.(false), void 0 === o5 ? h3 = void 0 : (h3 = new o5(t5), h3._$AT(t5, s4, e5)), void 0 !== e5 ? (s4._$Co ??= [])[e5] = h3 : s4._$Cl = h3), void 0 !== h3 && (i6 = M(t5, h3._$AS(t5, i6.values), h3, e5)), i6;
+  function M(t5, i7, s5 = t5, e5) {
+    if (i7 === E) return i7;
+    let h4 = void 0 !== e5 ? s5._$Co?.[e5] : s5._$Cl;
+    const o5 = a2(i7) ? void 0 : i7._$litDirective$;
+    return h4?.constructor !== o5 && (h4?._$AO?.(false), void 0 === o5 ? h4 = void 0 : (h4 = new o5(t5), h4._$AT(t5, s5, e5)), void 0 !== e5 ? (s5._$Co ??= [])[e5] = h4 : s5._$Cl = h4), void 0 !== h4 && (i7 = M(t5, h4._$AS(t5, i7.values), h4, e5)), i7;
   }
   var R = class {
-    constructor(t5, i6) {
-      this._$AV = [], this._$AN = void 0, this._$AD = t5, this._$AM = i6;
+    constructor(t5, i7) {
+      this._$AV = [], this._$AN = void 0, this._$AD = t5, this._$AM = i7;
     }
     get parentNode() {
       return this._$AM.parentNode;
@@ -387,34 +387,34 @@
       return this._$AM._$AU;
     }
     u(t5) {
-      const { el: { content: i6 }, parts: s4 } = this._$AD, e5 = (t5?.creationScope ?? l2).importNode(i6, true);
+      const { el: { content: i7 }, parts: s5 } = this._$AD, e5 = (t5?.creationScope ?? l2).importNode(i7, true);
       P.currentNode = e5;
-      let h3 = P.nextNode(), o5 = 0, n4 = 0, r5 = s4[0];
+      let h4 = P.nextNode(), o5 = 0, n4 = 0, r5 = s5[0];
       for (; void 0 !== r5; ) {
         if (o5 === r5.index) {
-          let i7;
-          2 === r5.type ? i7 = new k(h3, h3.nextSibling, this, t5) : 1 === r5.type ? i7 = new r5.ctor(h3, r5.name, r5.strings, this, t5) : 6 === r5.type && (i7 = new Z(h3, this, t5)), this._$AV.push(i7), r5 = s4[++n4];
+          let i8;
+          2 === r5.type ? i8 = new k(h4, h4.nextSibling, this, t5) : 1 === r5.type ? i8 = new r5.ctor(h4, r5.name, r5.strings, this, t5) : 6 === r5.type && (i8 = new Z(h4, this, t5)), this._$AV.push(i8), r5 = s5[++n4];
         }
-        o5 !== r5?.index && (h3 = P.nextNode(), o5++);
+        o5 !== r5?.index && (h4 = P.nextNode(), o5++);
       }
       return P.currentNode = l2, e5;
     }
     p(t5) {
-      let i6 = 0;
-      for (const s4 of this._$AV) void 0 !== s4 && (void 0 !== s4.strings ? (s4._$AI(t5, s4, i6), i6 += s4.strings.length - 2) : s4._$AI(t5[i6])), i6++;
+      let i7 = 0;
+      for (const s5 of this._$AV) void 0 !== s5 && (void 0 !== s5.strings ? (s5._$AI(t5, s5, i7), i7 += s5.strings.length - 2) : s5._$AI(t5[i7])), i7++;
     }
   };
   var k = class _k {
     get _$AU() {
       return this._$AM?._$AU ?? this._$Cv;
     }
-    constructor(t5, i6, s4, e5) {
-      this.type = 2, this._$AH = A, this._$AN = void 0, this._$AA = t5, this._$AB = i6, this._$AM = s4, this.options = e5, this._$Cv = e5?.isConnected ?? true;
+    constructor(t5, i7, s5, e5) {
+      this.type = 2, this._$AH = A, this._$AN = void 0, this._$AA = t5, this._$AB = i7, this._$AM = s5, this.options = e5, this._$Cv = e5?.isConnected ?? true;
     }
     get parentNode() {
       let t5 = this._$AA.parentNode;
-      const i6 = this._$AM;
-      return void 0 !== i6 && 11 === t5?.nodeType && (t5 = i6.parentNode), t5;
+      const i7 = this._$AM;
+      return void 0 !== i7 && 11 === t5?.nodeType && (t5 = i7.parentNode), t5;
     }
     get startNode() {
       return this._$AA;
@@ -422,8 +422,8 @@
     get endNode() {
       return this._$AB;
     }
-    _$AI(t5, i6 = this) {
-      t5 = M(this, t5, i6), a2(t5) ? t5 === A || null == t5 || "" === t5 ? (this._$AH !== A && this._$AR(), this._$AH = A) : t5 !== this._$AH && t5 !== E && this._(t5) : void 0 !== t5._$litType$ ? this.$(t5) : void 0 !== t5.nodeType ? this.T(t5) : d2(t5) ? this.k(t5) : this._(t5);
+    _$AI(t5, i7 = this) {
+      t5 = M(this, t5, i7), a2(t5) ? t5 === A || null == t5 || "" === t5 ? (this._$AH !== A && this._$AR(), this._$AH = A) : t5 !== this._$AH && t5 !== E && this._(t5) : void 0 !== t5._$litType$ ? this.$(t5) : void 0 !== t5.nodeType ? this.T(t5) : d2(t5) ? this.k(t5) : this._(t5);
     }
     O(t5) {
       return this._$AA.parentNode.insertBefore(t5, this._$AB);
@@ -435,28 +435,28 @@
       this._$AH !== A && a2(this._$AH) ? this._$AA.nextSibling.data = t5 : this.T(l2.createTextNode(t5)), this._$AH = t5;
     }
     $(t5) {
-      const { values: i6, _$litType$: s4 } = t5, e5 = "number" == typeof s4 ? this._$AC(t5) : (void 0 === s4.el && (s4.el = S2.createElement(V(s4.h, s4.h[0]), this.options)), s4);
-      if (this._$AH?._$AD === e5) this._$AH.p(i6);
+      const { values: i7, _$litType$: s5 } = t5, e5 = "number" == typeof s5 ? this._$AC(t5) : (void 0 === s5.el && (s5.el = S2.createElement(V(s5.h, s5.h[0]), this.options)), s5);
+      if (this._$AH?._$AD === e5) this._$AH.p(i7);
       else {
-        const t6 = new R(e5, this), s5 = t6.u(this.options);
-        t6.p(i6), this.T(s5), this._$AH = t6;
+        const t6 = new R(e5, this), s6 = t6.u(this.options);
+        t6.p(i7), this.T(s6), this._$AH = t6;
       }
     }
     _$AC(t5) {
-      let i6 = C.get(t5.strings);
-      return void 0 === i6 && C.set(t5.strings, i6 = new S2(t5)), i6;
+      let i7 = C.get(t5.strings);
+      return void 0 === i7 && C.set(t5.strings, i7 = new S2(t5)), i7;
     }
     k(t5) {
       u2(this._$AH) || (this._$AH = [], this._$AR());
-      const i6 = this._$AH;
-      let s4, e5 = 0;
-      for (const h3 of t5) e5 === i6.length ? i6.push(s4 = new _k(this.O(c3()), this.O(c3()), this, this.options)) : s4 = i6[e5], s4._$AI(h3), e5++;
-      e5 < i6.length && (this._$AR(s4 && s4._$AB.nextSibling, e5), i6.length = e5);
+      const i7 = this._$AH;
+      let s5, e5 = 0;
+      for (const h4 of t5) e5 === i7.length ? i7.push(s5 = new _k(this.O(c3()), this.O(c3()), this, this.options)) : s5 = i7[e5], s5._$AI(h4), e5++;
+      e5 < i7.length && (this._$AR(s5 && s5._$AB.nextSibling, e5), i7.length = e5);
     }
-    _$AR(t5 = this._$AA.nextSibling, s4) {
-      for (this._$AP?.(false, true, s4); t5 !== this._$AB; ) {
-        const s5 = i3(t5).nextSibling;
-        i3(t5).remove(), t5 = s5;
+    _$AR(t5 = this._$AA.nextSibling, s5) {
+      for (this._$AP?.(false, true, s5); t5 !== this._$AB; ) {
+        const s6 = i3(t5).nextSibling;
+        i3(t5).remove(), t5 = s6;
       }
     }
     setConnected(t5) {
@@ -470,17 +470,17 @@
     get _$AU() {
       return this._$AM._$AU;
     }
-    constructor(t5, i6, s4, e5, h3) {
-      this.type = 1, this._$AH = A, this._$AN = void 0, this.element = t5, this.name = i6, this._$AM = e5, this.options = h3, s4.length > 2 || "" !== s4[0] || "" !== s4[1] ? (this._$AH = Array(s4.length - 1).fill(new String()), this.strings = s4) : this._$AH = A;
+    constructor(t5, i7, s5, e5, h4) {
+      this.type = 1, this._$AH = A, this._$AN = void 0, this.element = t5, this.name = i7, this._$AM = e5, this.options = h4, s5.length > 2 || "" !== s5[0] || "" !== s5[1] ? (this._$AH = Array(s5.length - 1).fill(new String()), this.strings = s5) : this._$AH = A;
     }
-    _$AI(t5, i6 = this, s4, e5) {
-      const h3 = this.strings;
+    _$AI(t5, i7 = this, s5, e5) {
+      const h4 = this.strings;
       let o5 = false;
-      if (void 0 === h3) t5 = M(this, t5, i6, 0), o5 = !a2(t5) || t5 !== this._$AH && t5 !== E, o5 && (this._$AH = t5);
+      if (void 0 === h4) t5 = M(this, t5, i7, 0), o5 = !a2(t5) || t5 !== this._$AH && t5 !== E, o5 && (this._$AH = t5);
       else {
         const e6 = t5;
         let n4, r5;
-        for (t5 = h3[0], n4 = 0; n4 < h3.length - 1; n4++) r5 = M(this, e6[s4 + n4], i6, n4), r5 === E && (r5 = this._$AH[n4]), o5 ||= !a2(r5) || r5 !== this._$AH[n4], r5 === A ? t5 = A : t5 !== A && (t5 += (r5 ?? "") + h3[n4 + 1]), this._$AH[n4] = r5;
+        for (t5 = h4[0], n4 = 0; n4 < h4.length - 1; n4++) r5 = M(this, e6[s5 + n4], i7, n4), r5 === E && (r5 = this._$AH[n4]), o5 ||= !a2(r5) || r5 !== this._$AH[n4], r5 === A ? t5 = A : t5 !== A && (t5 += (r5 ?? "") + h4[n4 + 1]), this._$AH[n4] = r5;
       }
       o5 && !e5 && this.j(t5);
     }
@@ -505,21 +505,21 @@
     }
   };
   var z = class extends H {
-    constructor(t5, i6, s4, e5, h3) {
-      super(t5, i6, s4, e5, h3), this.type = 5;
+    constructor(t5, i7, s5, e5, h4) {
+      super(t5, i7, s5, e5, h4), this.type = 5;
     }
-    _$AI(t5, i6 = this) {
-      if ((t5 = M(this, t5, i6, 0) ?? A) === E) return;
-      const s4 = this._$AH, e5 = t5 === A && s4 !== A || t5.capture !== s4.capture || t5.once !== s4.once || t5.passive !== s4.passive, h3 = t5 !== A && (s4 === A || e5);
-      e5 && this.element.removeEventListener(this.name, this, s4), h3 && this.element.addEventListener(this.name, this, t5), this._$AH = t5;
+    _$AI(t5, i7 = this) {
+      if ((t5 = M(this, t5, i7, 0) ?? A) === E) return;
+      const s5 = this._$AH, e5 = t5 === A && s5 !== A || t5.capture !== s5.capture || t5.once !== s5.once || t5.passive !== s5.passive, h4 = t5 !== A && (s5 === A || e5);
+      e5 && this.element.removeEventListener(this.name, this, s5), h4 && this.element.addEventListener(this.name, this, t5), this._$AH = t5;
     }
     handleEvent(t5) {
       "function" == typeof this._$AH ? this._$AH.call(this.options?.host ?? this.element, t5) : this._$AH.handleEvent(t5);
     }
   };
   var Z = class {
-    constructor(t5, i6, s4) {
-      this.element = t5, this.type = 6, this._$AN = void 0, this._$AM = i6, this.options = s4;
+    constructor(t5, i7, s5) {
+      this.element = t5, this.type = 6, this._$AN = void 0, this._$AM = i7, this.options = s5;
     }
     get _$AU() {
       return this._$AM._$AU;
@@ -531,14 +531,14 @@
   var j = { M: h2, P: o3, A: n3, C: 1, L: N, R, D: d2, V: M, I: k, H, N: L, U: z, B: I, F: Z };
   var B = t2.litHtmlPolyfillSupport;
   B?.(S2, k), (t2.litHtmlVersions ??= []).push("3.3.3");
-  var D = (t5, i6, s4) => {
-    const e5 = s4?.renderBefore ?? i6;
-    let h3 = e5._$litPart$;
-    if (void 0 === h3) {
-      const t6 = s4?.renderBefore ?? null;
-      e5._$litPart$ = h3 = new k(i6.insertBefore(c3(), t6), t6, void 0, s4 ?? {});
+  var D = (t5, i7, s5) => {
+    const e5 = s5?.renderBefore ?? i7;
+    let h4 = e5._$litPart$;
+    if (void 0 === h4) {
+      const t6 = s5?.renderBefore ?? null;
+      e5._$litPart$ = h4 = new k(i7.insertBefore(c3(), t6), t6, void 0, s5 ?? {});
     }
-    return h3._$AI(t5), h3;
+    return h4._$AI(t5), h4;
   };
 
   // node_modules/lit-element/lit-element.js
@@ -596,8 +596,8 @@
     get _$AU() {
       return this._$AM._$AU;
     }
-    _$AT(t5, e5, i6) {
-      this._$Ct = t5, this._$AM = e5, this._$Ci = i6;
+    _$AT(t5, e5, i7) {
+      this._$Ct = t5, this._$AM = e5, this._$Ci = i7;
     }
     _$AS(t5, e5) {
       return this.update(t5, e5);
@@ -614,9 +614,37 @@
    * SPDX-License-Identifier: BSD-3-Clause
    */
   var { I: t4 } = j;
+  var i6 = (o5) => o5;
   var r4 = (o5) => void 0 === o5.strings;
+  var s4 = () => document.createComment("");
+  var v2 = (o5, n4, e5) => {
+    const l4 = o5._$AA.parentNode, d3 = void 0 === n4 ? o5._$AB : n4._$AA;
+    if (void 0 === e5) {
+      const i7 = l4.insertBefore(s4(), d3), n5 = l4.insertBefore(s4(), d3);
+      e5 = new t4(i7, n5, o5, o5.options);
+    } else {
+      const t5 = e5._$AB.nextSibling, n5 = e5._$AM, c5 = n5 !== o5;
+      if (c5) {
+        let t6;
+        e5._$AQ?.(o5), e5._$AM = o5, void 0 !== e5._$AP && (t6 = o5._$AU) !== n5._$AU && e5._$AP(t6);
+      }
+      if (t5 !== d3 || c5) {
+        let o6 = e5._$AA;
+        for (; o6 !== t5; ) {
+          const t6 = i6(o6).nextSibling;
+          i6(l4).insertBefore(o6, d3), o6 = t6;
+        }
+      }
+    }
+    return e5;
+  };
+  var u3 = (o5, t5, i7 = o5) => (o5._$AI(t5, i7), o5);
   var m2 = {};
   var p3 = (o5, t5 = m2) => o5._$AH = t5;
+  var M2 = (o5) => o5._$AH;
+  var h3 = (o5) => {
+    o5._$AR(), o5._$AA.remove();
+  };
 
   // node_modules/lit-html/directives/live.js
   /**
@@ -632,24 +660,87 @@
     render(r5) {
       return r5;
     }
-    update(i6, [t5]) {
+    update(i7, [t5]) {
       if (t5 === E || t5 === A) return t5;
-      const o5 = i6.element, l4 = i6.name;
-      if (i6.type === t3.PROPERTY) {
+      const o5 = i7.element, l4 = i7.name;
+      if (i7.type === t3.PROPERTY) {
         if (t5 === o5[l4]) return E;
-      } else if (i6.type === t3.BOOLEAN_ATTRIBUTE) {
+      } else if (i7.type === t3.BOOLEAN_ATTRIBUTE) {
         if (!!t5 === o5.hasAttribute(l4)) return E;
-      } else if (i6.type === t3.ATTRIBUTE && o5.getAttribute(l4) === t5 + "") return E;
-      return p3(i6), t5;
+      } else if (i7.type === t3.ATTRIBUTE && o5.getAttribute(l4) === t5 + "") return E;
+      return p3(i7), t5;
+    }
+  });
+
+  // node_modules/lit-html/directives/repeat.js
+  /**
+   * @license
+   * Copyright 2017 Google LLC
+   * SPDX-License-Identifier: BSD-3-Clause
+   */
+  var u4 = (e5, s5, t5) => {
+    const r5 = /* @__PURE__ */ new Map();
+    for (let l4 = s5; l4 <= t5; l4++) r5.set(e5[l4], l4);
+    return r5;
+  };
+  var c4 = e4(class extends i5 {
+    constructor(e5) {
+      if (super(e5), e5.type !== t3.CHILD) throw Error("repeat() can only be used in text expressions");
+    }
+    dt(e5, s5, t5) {
+      let r5;
+      void 0 === t5 ? t5 = s5 : void 0 !== s5 && (r5 = s5);
+      const l4 = [], o5 = [];
+      let i7 = 0;
+      for (const s6 of e5) l4[i7] = r5 ? r5(s6, i7) : i7, o5[i7] = t5(s6, i7), i7++;
+      return { values: o5, keys: l4 };
+    }
+    render(e5, s5, t5) {
+      return this.dt(e5, s5, t5).values;
+    }
+    update(s5, [t5, r5, c5]) {
+      const d3 = M2(s5), { values: p4, keys: a3 } = this.dt(t5, r5, c5);
+      if (!Array.isArray(d3)) return this.ut = a3, p4;
+      const h4 = this.ut ??= [], v3 = [];
+      let m3, y3, x2 = 0, j2 = d3.length - 1, k2 = 0, w2 = p4.length - 1;
+      for (; x2 <= j2 && k2 <= w2; ) if (null === d3[x2]) x2++;
+      else if (null === d3[j2]) j2--;
+      else if (h4[x2] === a3[k2]) v3[k2] = u3(d3[x2], p4[k2]), x2++, k2++;
+      else if (h4[j2] === a3[w2]) v3[w2] = u3(d3[j2], p4[w2]), j2--, w2--;
+      else if (h4[x2] === a3[w2]) v3[w2] = u3(d3[x2], p4[w2]), v2(s5, v3[w2 + 1], d3[x2]), x2++, w2--;
+      else if (h4[j2] === a3[k2]) v3[k2] = u3(d3[j2], p4[k2]), v2(s5, d3[x2], d3[j2]), j2--, k2++;
+      else if (void 0 === m3 && (m3 = u4(a3, k2, w2), y3 = u4(h4, x2, j2)), m3.has(h4[x2])) if (m3.has(h4[j2])) {
+        const e5 = y3.get(a3[k2]), t6 = void 0 !== e5 ? d3[e5] : null;
+        if (null === t6) {
+          const e6 = v2(s5, d3[x2]);
+          u3(e6, p4[k2]), v3[k2] = e6;
+        } else v3[k2] = u3(t6, p4[k2]), v2(s5, d3[x2], t6), d3[e5] = null;
+        k2++;
+      } else h3(d3[j2]), j2--;
+      else h3(d3[x2]), x2++;
+      for (; k2 <= w2; ) {
+        const e5 = v2(s5, v3[w2 + 1]);
+        u3(e5, p4[k2]), v3[k2++] = e5;
+      }
+      for (; x2 <= j2; ) {
+        const e5 = d3[x2++];
+        null !== e5 && h3(e5);
+      }
+      return this.ut = a3, p3(s5, v3), E;
     }
   });
 
   // src/resident-scenes-card.js
-  var VERSION = "0.2.2";
+  var VERSION = "0.3.0";
   var WS = "resident_scenes";
   var HOUSE = "_house";
   var DOMAINS = ["light", "cover", "climate", "switch", "fan", "media_player", "scene"];
+  var LIVE = ["light", "cover", "switch", "fan"];
+  var FLAGS = ["missing", "not_released", "other_area"];
   var VISIBLE_RELOAD = 5 * 60 * 1e3;
+  var newId = () => Math.random().toString(36).slice(2, 10);
+  var PLACEHOLDER = b2`<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor"
+  d="M19 19H5V5h14m0-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2m-5.04 9.29-2.75 3.54-1.96-2.36L6.5 17h11z"/></svg>`;
   var I18N = {
     en: {
       new_scene: "New scene",
@@ -657,23 +748,26 @@
       other_scenes: "Other scenes",
       favorites: "Favorites",
       play: "Play",
+      played: "Played",
+      play_failed: "The scene could not be played.",
       edit: "Edit",
-      save: "Save",
-      cancel: "Cancel",
+      done: "Done",
       delete: "Delete",
       duplicate: "Duplicate",
       back: "Back",
       name: "Name",
       image: "Image",
       no_image: "No image",
+      choose_image: "Change image",
       all: "All",
-      none: "\u2013",
       slot: "Slot",
-      keep: "Stored value",
-      capture: "Current state",
+      free: "free",
+      no_slot: "No slot",
+      close: "Close",
+      loses: "loses its place.",
+      replace: "Replace",
       off: "Off",
       closed: "Closed",
-      set: "Set value",
       on: "On",
       favorite: "Favorite",
       volume: "Volume",
@@ -689,53 +783,54 @@
       all_house: "All in the house",
       rights_gone: "Your right to change scenes was withdrawn.",
       empty: "No scenes yet.",
+      no_steps: "No steps yet.",
       no_devices: "No released devices.",
       confirm_delete: "Delete this scene for good?",
       used_on: "Used by:",
       outside_note: "Automations and schedules using it will stop working.",
       yes: "Delete",
       no: "Keep",
-      conflict: "Someone else changed this scene meanwhile.",
-      load_new: "Load new version",
-      save_copy: "Save mine as copy",
+      cancel: "Cancel",
       copy: "copy",
       reload: "A new version is installed. Please reload.",
       reload_btn: "Reload",
       house: "House",
       installer: "Installer",
+      protected: "Installer scene (protected)",
       released: "Content released to residents",
-      kind: "Kind",
-      resident: "Resident scene",
       brightness: "Brightness",
       color_temp: "Colour temperature",
       hue: "Colour",
       position: "Position",
       tilt: "Tilt",
       temperature: "Temperature",
-      mode: "Mode",
-      delay: "Delay (s)",
+      percentage: "Speed",
       transition: "Transition (s)",
       order: "Sequence",
-      up: "Move up",
-      down: "Move down",
-      preview: "Live preview",
+      live: "Live adjustments",
       undo: "Undo last change",
       rights: "Permissions",
       may_edit: "may change scenes",
       panel: "Panel",
       own_image: "Own image",
-      crop: "Section",
       crop_x: "Horizontal",
       crop_y: "Vertical",
       use_image: "Use image",
       room_scene: "Room scene",
       remove: "Remove",
+      open: "Open",
+      add_step: "Add step",
+      add_delay: "Add delay",
+      pick_room: "Room",
+      pick_domain: "Trade",
       stale: "Not up to date, retrying \u2026",
+      offline: "Connection lost. Editing is locked until it is back.",
+      seconds: "Delay (s)",
       no_room_scene: "No room scene any more",
       white: "White",
       colour: "Colour",
       saturation: "Saturation",
-      drag: "Drag to reorder",
+      drag: "Drag to reorder, or use the arrow keys",
       light: "Lights",
       cover: "Shading",
       climate: "Climate",
@@ -748,14 +843,14 @@
         name_exists: "This name is taken.",
         invalid_name: "Name is empty or too long.",
         limit_reached: "Limit of scenes reached.",
-        too_many_steps: "Too many devices.",
+        too_many_steps: "Too many steps or devices.",
         entity_not_allowed: "Not released for this scene:",
         entity_unavailable: "Not reachable, its state cannot be captured:",
         unknown_favorite: "This favorite no longer exists.",
         not_found: "The scene no longer exists.",
         invalid_step: "Invalid setting.",
         invalid_value: "Value out of range:",
-        invalid_delay: "Delay too long:",
+        invalid_delay: "Delay out of range:",
         favorite_not_supported: "Favorites only work on players of the music system:",
         invalid_scene_call: "This scene cannot be called.",
         duplicate_entity: "Device used twice:",
@@ -765,6 +860,7 @@
         image_too_large: "Image too large, limit:",
         image_limit: "Image limit reached:",
         nothing_to_undo: "Nothing to undo.",
+        step_missing: "This step was removed meanwhile. The current state is shown.",
         default: "Saving failed."
       }
     },
@@ -774,23 +870,26 @@
       other_scenes: "Weitere Szenen",
       favorites: "Favoriten",
       play: "Abspielen",
+      played: "Ausgel\xF6st",
+      play_failed: "Die Szene lie\xDF sich nicht ausl\xF6sen.",
       edit: "\xC4ndern",
-      save: "Speichern",
-      cancel: "Abbrechen",
+      done: "Fertig",
       delete: "L\xF6schen",
       duplicate: "Duplizieren",
       back: "Zur\xFCck",
       name: "Name",
       image: "Bild",
       no_image: "Kein Bild",
+      choose_image: "Bild \xE4ndern",
       all: "Alle",
-      none: "\u2013",
       slot: "Platz",
-      keep: "Gespeicherter Wert",
-      capture: "Aktueller Zustand",
+      free: "frei",
+      no_slot: "Kein Platz",
+      close: "Schlie\xDFen",
+      loses: "verliert seinen Platz.",
+      replace: "Ersetzen",
       off: "Aus",
       closed: "Zu",
-      set: "Wert setzen",
       on: "An",
       favorite: "Favorit",
       volume: "Lautst\xE4rke",
@@ -806,53 +905,54 @@
       all_house: "Alle im Haus",
       rights_gone: "Ihr Recht, Szenen zu \xE4ndern, wurde entzogen.",
       empty: "Noch keine Szenen.",
+      no_steps: "Noch keine Schritte.",
       no_devices: "Keine freigegebenen Ger\xE4te.",
       confirm_delete: "Diese Szene endg\xFCltig l\xF6schen?",
       used_on: "Verwendet in:",
       outside_note: "Automationen und Zeitpl\xE4ne damit wirken nicht mehr.",
       yes: "L\xF6schen",
       no: "Behalten",
-      conflict: "Jemand anderes hat die Szene inzwischen ge\xE4ndert.",
-      load_new: "Neuen Stand laden",
-      save_copy: "Meine Fassung als Kopie sichern",
+      cancel: "Abbrechen",
       copy: "Kopie",
       reload: "Eine neue Version ist installiert. Bitte neu laden.",
       reload_btn: "Neu laden",
       house: "Haus",
       installer: "Errichter",
+      protected: "Errichterszene (gesch\xFCtzt)",
       released: "Inhalt f\xFCr Bewohner freigegeben",
-      kind: "Art",
-      resident: "Kundenszene",
       brightness: "Helligkeit",
       color_temp: "Farbtemperatur",
       hue: "Farbe",
       position: "Position",
       tilt: "Neigung",
       temperature: "Temperatur",
-      mode: "Betriebsart",
-      delay: "Verz\xF6gerung (s)",
+      percentage: "Stufe",
       transition: "\xDCbergang (s)",
       order: "Ablauf",
-      up: "Nach oben",
-      down: "Nach unten",
-      preview: "Live-Vorschau",
-      undo: "Letzte \xC4nderung zur\xFCcknehmen",
+      live: "Live-Anpassungen",
+      undo: "Zur\xFCcknehmen",
       rights: "Berechtigungen",
       may_edit: "darf Szenen \xE4ndern",
       panel: "Panel",
       own_image: "Eigenes Bild",
-      crop: "Ausschnitt",
       crop_x: "Waagerecht",
       crop_y: "Senkrecht",
       use_image: "Bild \xFCbernehmen",
       room_scene: "Raumszene",
       remove: "Entfernen",
+      open: "\xD6ffnen",
+      add_step: "Schritt hinzuf\xFCgen",
+      add_delay: "Verz\xF6gerung hinzuf\xFCgen",
+      pick_room: "Raum",
+      pick_domain: "Gewerk",
+      stale: "Nicht aktuell, neuer Versuch l\xE4uft \u2026",
+      offline: "Verbindung unterbrochen. Der Editor ist gesperrt, bis sie zur\xFCck ist.",
+      seconds: "Verz\xF6gerung (s)",
       no_room_scene: "Keine Raumszene mehr",
       white: "Wei\xDF",
       colour: "Farbe",
       saturation: "S\xE4ttigung",
-      drag: "Ziehen zum Sortieren",
-      stale: "Nicht aktuell, neuer Versuch l\xE4uft \u2026",
+      drag: "Ziehen zum Sortieren, oder Pfeiltasten",
       light: "Licht",
       cover: "Beschattung",
       climate: "Klima",
@@ -865,14 +965,14 @@
         name_exists: "Dieser Name ist schon vergeben.",
         invalid_name: "Name fehlt oder ist zu lang.",
         limit_reached: "H\xF6chstzahl an Szenen erreicht.",
-        too_many_steps: "Zu viele Ger\xE4te.",
+        too_many_steps: "Zu viele Schritte oder Ger\xE4te.",
         entity_not_allowed: "F\xFCr diese Szene nicht freigegeben:",
         entity_unavailable: "Nicht erreichbar, der Zustand l\xE4sst sich nicht \xFCbernehmen:",
         unknown_favorite: "Diesen Favoriten gibt es nicht mehr.",
         not_found: "Die Szene gibt es nicht mehr.",
         invalid_step: "Ung\xFCltige Einstellung.",
         invalid_value: "Wert au\xDFerhalb des Bereichs:",
-        invalid_delay: "Verz\xF6gerung zu lang:",
+        invalid_delay: "Verz\xF6gerung au\xDFerhalb des Bereichs:",
         favorite_not_supported: "Favoriten nur f\xFCr Player des Musiksystems:",
         invalid_scene_call: "Diese Szene l\xE4sst sich nicht aufrufen.",
         duplicate_entity: "Ger\xE4t doppelt:",
@@ -882,6 +982,7 @@
         image_too_large: "Bild zu gro\xDF, Grenze:",
         image_limit: "H\xF6chstzahl an Bildern erreicht:",
         nothing_to_undo: "Nichts zur\xFCckzunehmen.",
+        step_missing: "Dieser Schritt wurde inzwischen entfernt. Der aktuelle Stand wird gezeigt.",
         default: "Speichern fehlgeschlagen."
       }
     }
@@ -890,7 +991,7 @@
   var ResidentScenesCard = class extends i4 {
     constructor() {
       super(...arguments);
-      __publicField(this, "_editKey", Math.random().toString(36).slice(2));
+      __publicField(this, "_drafts", /* @__PURE__ */ new Map());
     }
     setConfig(config) {
       const cfg = { scope: "area", view: "manage", ...config };
@@ -905,6 +1006,10 @@
     getCardSize() {
       return this._config?.view === "favorites" ? 2 : 4;
     }
+    // sections view: full width, so the two columns appear (V1)
+    getGridOptions() {
+      return { columns: 12, min_columns: 6, rows: "auto" };
+    }
     connectedCallback() {
       super.connectedCallback();
       this._ro = new ResizeObserver(([entry]) => this._narrow = entry.contentRect.width < 600);
@@ -918,19 +1023,26 @@
       clearTimeout(this._retry);
       document.removeEventListener("visibilitychange", this._onVisible);
       this.hass?.connection.removeEventListener?.("ready", this._onReady);
+      this.hass?.connection.removeEventListener?.("disconnected", this._onDown);
       this._ro?.disconnect();
       this._unsubscribe();
-      setTimeout(() => this.isConnected || this._endPreview(true));
     }
     updated(changed) {
       if (changed.has("hass") && this.hass && !this._started && this.isConnected) this._start();
+      const f3 = this._focusStep;
+      if (f3 && this._detail?.sequence?.[f3.index]?.id === f3.id) {
+        this._focusStep = null;
+        this.renderRoot.querySelector(`[data-action="drag"][data-id="${f3.id}"]`)?.focus();
+      }
     }
     _start() {
       this._started = true;
       this._needSub = true;
-      this._onReady ??= () => (this._needSub = true, this._load());
+      this._onReady ??= () => (this._offline = false, this._needSub = true, this._load());
+      this._onDown ??= () => this._offline = true;
       this._onVisible ??= () => document.visibilityState === "visible" && Date.now() - (this._loadedAt ?? 0) > VISIBLE_RELOAD && this._load();
       this.hass.connection.addEventListener?.("ready", this._onReady);
+      this.hass.connection.addEventListener?.("disconnected", this._onDown);
       document.addEventListener("visibilitychange", this._onVisible);
       this._timer = setInterval(() => this._load(), 6 * 3600 * 1e3);
       this._load();
@@ -946,9 +1058,14 @@
       this._unsub = this.hass.connection.subscribeMessage(() => this._load(true), { type: `${WS}/subscribe` });
       this._unsub.catch(() => this._needSub = true);
     }
+    get _lang() {
+      return this.hass?.locale?.language?.startsWith("de") ? "de" : "en";
+    }
     _t(key) {
-      const lang = this.hass?.locale?.language?.startsWith("de") ? "de" : "en";
-      return key.split(".").reduce((o5, k2) => o5?.[k2], I18N[lang]) ?? key;
+      return key.split(".").reduce((o5, k2) => o5?.[k2], I18N[this._lang]) ?? key;
+    }
+    _num(value) {
+      return Number(value).toLocaleString(this._lang);
     }
     get _scope() {
       return this._config.scope === "house" ? HOUSE : this._config.area;
@@ -972,20 +1089,23 @@
       }
       if (this._data.can_edit && this._notice === "rights_gone") this._notice = null;
       if (this._edit && !this._data.can_edit) {
-        this._endPreview(true);
         this._edit = null;
         this._notice = "rights_gone";
       }
       if (this._rights && this._data.manages_rights) this._loadRights();
       if (!this._data.manages_rights) this._rights = null;
-      if (fromServer && this._edit) return;
+      if (this._edit && !fromServer) this._loadDevices();
       if (this._selected) await this._loadDetail();
     }
     async _loadDetail() {
       try {
-        this._detail = await this.hass.callWS({ type: `${WS}/scene`, scene_id: this._selected });
+        const detail = await this.hass.callWS({ type: `${WS}/scene`, scene_id: this._selected });
+        const focused = this.renderRoot.activeElement?.dataset?.key;
+        for (const key of this._drafts.keys()) if (key !== focused) this._drafts.delete(key);
+        this._detail = detail;
+        if (this._edit?.open && !detail.sequence.some((s5) => s5.id === this._edit.open)) this._setEdit({ open: null });
       } catch (err) {
-        if (err.code === "not_found") this._selected = null, this._detail = null;
+        if (err.code === "not_found") this._selected = null, this._detail = null, this._edit = null;
       }
     }
     async _loadRights() {
@@ -996,7 +1116,7 @@
       }
     }
     _scene(id) {
-      return this._data?.scenes.find((s4) => s4.id === id);
+      return this._data?.scenes.find((s5) => s5.id === id);
     }
     get _scenes() {
       return [...this._data?.scenes ?? []].sort((a3, b3) => a3.name.localeCompare(b3.name));
@@ -1010,21 +1130,31 @@
         } catch (err) {
         }
       }
-      return st?.attributes.friendly_name ?? fallback ?? eid;
-    }
-    _entityArea(eid) {
-      const ent = this.hass.entities?.[eid];
-      return ent?.area_id ?? this.hass.devices?.[ent?.device_id]?.area_id ?? null;
+      return fallback ?? eid;
     }
     _areaName(areaId) {
       return areaId ? this.hass.areas?.[areaId]?.name ?? areaId : this._t("house");
     }
-    _play(entityId) {
-      if (entityId) this.hass.callService("scene", "turn_on", { entity_id: entityId });
+    async _play(entityId) {
+      if (!entityId) return;
+      try {
+        await this.hass.callService("scene", "turn_on", { entity_id: entityId });
+        if (this._notice === "play_failed") this._notice = null;
+        this._played = entityId;
+        setTimeout(() => this._played === entityId && (this._played = null), 1500);
+      } catch (err) {
+        this._notice = "play_failed";
+      }
     }
     _err(code, detail) {
       const known = this._t(`err.${code}`) !== `err.${code}`;
       return known ? `${this._t(`err.${code}`)}${detail ? ` ${detail}` : ""}` : this._t("err.default");
+    }
+    _draft(key, stored) {
+      return this._drafts.has(key) ? this._drafts.get(key) : stored;
+    }
+    _keep(key) {
+      return (ev) => (this._drafts.set(key, ev.target.value), this.requestUpdate());
     }
     // ---------- rendering ----------
     render() {
@@ -1047,8 +1177,8 @@
       if (!tiles.length) return A;
       return b2`<div class="tiles">
       ${tiles.map(
-        (s4) => b2`<button class="tile" data-action="play" aria-label=${s4.name} @click=${() => this._play(s4.entity_id)}>
-          ${s4.image_url ? b2`<img src=${s4.image_url} alt="" />` : A}<span>${s4.name}</span>
+        (s5) => b2`<button class="tile" data-action="play" aria-label=${s5.name} @click=${() => this._play(s5.entity_id)}>
+          ${s5.image_url ? b2`<img src=${s5.image_url} alt="" />` : PLACEHOLDER}<span>${s5.name}</span>
         </button>`
       )}
     </div>`;
@@ -1057,42 +1187,48 @@
       const showDetail = this._config.view === "manage" && (this._selected || this._edit || this._rights);
       const list = this._renderList();
       if (!showDetail) return list;
-      const detail = this._edit ? this._renderEditor() : this._rights ? this._renderRights() : this._renderDetail();
+      const editing = this._edit && this._detail?.id === this._edit.scene_id;
+      const detail = editing ? this._renderEditor() : this._rights ? this._renderRights() : this._renderDetail();
       if (this._narrow) return detail;
       return b2`<div class="columns"><div class="col-list">${list}</div><div class="col-detail">${detail}</div></div>`;
+    }
+    _playButton(eid, label = false) {
+      const done = this._played === eid;
+      return b2`<button class=${label ? "primary" : "icon"} data-action="play" aria-label=${this._t("play")}
+      @click=${() => this._play(eid)}>${done ? "\u2713" : "\u25B6"}${label ? ` ${this._t(done ? "played" : "play")}` : ""}</button>`;
     }
     _renderList() {
       const manage = this._config.view === "manage";
       const d3 = this._data;
       const canEdit = manage && d3.can_edit;
       const full = this._scenes.length >= d3.limit;
-      const play = (eid) => b2`<button class="icon" data-action="play" aria-label=${this._t("play")}
-      @click=${() => this._play(eid)}>▶</button>`;
+      const favs = d3.favorites.map((id) => this._scene(id)).filter(Boolean);
+      const rest = this._scenes.filter((s5) => !d3.favorites.includes(s5.id));
+      const row = (s5) => b2`<div class="row ${this._selected === s5.id ? "selected" : ""}">
+      ${s5.image_url ? b2`<img class="thumb" src=${s5.image_url} alt="" />` : b2`<span class="thumb">${PLACEHOLDER}</span>`}
+      ${manage ? b2`<button class="name link" data-action="select" data-id=${s5.id} @click=${() => this._select(s5.id)}>${s5.name}</button>` : b2`<span class="name">${s5.name}</span>`}
+      ${s5.kind === "installer" ? b2`<span class="badge">${this._t("installer")}</span>` : A}
+      ${this._playButton(s5.entity_id)}
+    </div>`;
       return b2`
-      ${canEdit ? b2`<button class="primary wide" data-action="new" ?disabled=${full} @click=${() => this._openEditor(null)}>
+      ${canEdit ? b2`<button class="primary wide" data-action="new" ?disabled=${full} @click=${this._create}>
               + ${this._t("new_scene")}</button>
             ${full ? b2`<p class="muted">${this._t("err.limit_reached")} (${d3.limit})</p>` : A}` : A}
       ${manage && d3.manages_rights ? b2`<button class="wide" data-action="rights" @click=${this._openRights}>${this._t("rights")}</button>` : A}
+      ${favs.length ? b2`<h3>${this._t("favorites")}</h3>${favs.map(row)}` : A}
       <h3>${this._t("scenes")}</h3>
-      ${this._scenes.length ? this._scenes.map(
-        (s4) => b2`<div class="row ${this._selected === s4.id ? "selected" : ""}">
-              ${s4.image_url ? b2`<img class="thumb" src=${s4.image_url} alt="" />` : b2`<span class="thumb"></span>`}
-              ${manage ? b2`<button class="name link" data-action="select" data-id=${s4.id} @click=${() => this._select(s4.id)}>
-                    ${s4.name}</button>` : b2`<span class="name">${s4.name}</span>`}
-              ${s4.kind === "installer" ? b2`<span class="badge">${this._t("installer")}</span>` : A}
-              ${play(s4.entity_id)}
-            </div>`
-      ) : b2`<p class="muted">${this._t("empty")}</p>`}
+      ${rest.length ? rest.map(row) : favs.length ? A : b2`<p class="muted">${this._t("empty")}</p>`}
       ${d3.foreign_scenes.length ? b2`<h3>${this._t("other_scenes")}</h3>
             ${d3.foreign_scenes.map(
-        (s4) => b2`<div class="row"><span class="thumb"></span>
-                <span class="name">${this._name(s4.entity_id, s4.name)}${s4.knx ? b2`<span class="badge">KNX</span>` : A}</span>
-                ${play(s4.entity_id)}</div>`
+        (s5) => b2`<div class="row"><span class="thumb">${PLACEHOLDER}</span>
+                <span class="name">${this._name(s5.entity_id, s5.name)}${s5.knx ? b2`<span class="badge">KNX</span>` : A}</span>
+                ${this._playButton(s5.entity_id)}</div>`
       )}` : A}
     `;
     }
     async _select(id) {
       this._rights = null;
+      this._edit = null;
       this._selected = id;
       this._detail = null;
       await this._loadDetail();
@@ -1103,84 +1239,106 @@
       this._rights = null;
     }
     _renderDetail() {
-      const s4 = this._detail;
-      if (!s4) return A;
+      const s5 = this._detail;
+      if (!s5) return A;
       const d3 = this._data;
-      const slot = d3.favorites.indexOf(s4.id);
+      const slot = d3.favorites.indexOf(s5.id);
       return b2`${this._narrow ? b2`<button data-action="back" @click=${this._back}>‹ ${this._t("back")}</button>` : A}
       <div class="head">
-        ${s4.image_url ? b2`<img class="hero" src=${s4.image_url} alt="" />` : A}
-        <h2>${s4.name} ${s4.kind === "installer" ? b2`<span class="badge">${this._t("installer")}</span>` : A}</h2>
-        <button class="primary" data-action="play" @click=${() => this._play(s4.entity_id)}>▶ ${this._t("play")}</button>
-        ${d3.can_edit ? b2`<label class="heart">♥
-              <select data-field="favorite" aria-label=${this._t("favorites")} .value=${l3(slot < 0 ? "" : String(slot))} @change=${(e5) => this._setFavorite(e5.target.value)}>
-                <option value="">${this._t("none")}</option>
-                ${d3.favorites.map(
-        (_2, i6) => b2`<option value=${i6} ?selected=${i6 === slot}>${this._t("slot")} ${i6 + 1}</option>`
-      )}
-              </select></label>` : A}
-        ${d3.can_edit && s4.editable ? b2`<button data-action="edit" @click=${() => this._openEditor(s4)}>${this._t("edit")}</button>` : A}
-        ${d3.can_edit && s4.editable && s4.can_undo ? b2`<button data-action="undo" @click=${this._undo}>${this._t("undo")}</button>` : A}
+        ${s5.image_url ? b2`<img class="hero" src=${s5.image_url} alt="" />` : A}
+        <h2>${s5.name} ${s5.kind === "installer" ? b2`<span class="badge">${this._t("installer")}</span>` : A}</h2>
+        ${this._playButton(s5.entity_id, true)}
+        ${d3.can_edit ? b2`<button data-action="heart" aria-label=${this._t("favorites")} aria-pressed=${slot >= 0 ? "true" : "false"}
+              @click=${() => this._slots = {}}>♥${slot >= 0 ? ` ${this._t("slot")} ${slot + 1}` : ""}</button>` : A}
+        ${d3.can_edit && s5.editable ? b2`<button data-action="edit" @click=${() => this._openEditor(s5.id)}>${this._t("edit")}</button>` : A}
+        ${d3.can_edit && s5.editable && s5.can_undo ? b2`<button data-action="undo" @click=${this._undo}>${this._t("undo")}</button>` : A}
       </div>
       ${this._detailError ? b2`<p class="error" role="alert">${this._detailError}</p>` : A}
-      ${this._renderSteps(s4.steps)}`;
+      ${s5.sequence.length ? b2`<h3>${this._t("order")}</h3>${s5.sequence.map((step) => b2`<div class="row">${this._stepLine(step)}</div>`)}` : b2`<p class="muted">${this._t("no_steps")}</p>`}
+      ${this._slots ? this._renderSlots() : A}`;
     }
-    _groupOf(step) {
-      if (step.scene_id) return this._t("scene");
-      return this._house ? this._areaName(this._entityArea(step.entity_id)) : this._t(step.entity_id.split(".")[0]);
+    _stepTitle(step) {
+      const room = this._house ? `${this._areaName(step.area_id)} \u2013 ` : "";
+      return room + this._t(step.type === "scene" ? "scene" : step.domain);
     }
-    _renderSteps(steps) {
-      const groups = /* @__PURE__ */ new Map();
-      for (const step of steps) {
-        const key = this._groupOf(step);
-        if (!groups.has(key)) groups.set(key, []);
-        groups.get(key).push(step);
-      }
-      return [...groups].map(
-        ([title, items]) => b2`<h3>${title}</h3>
-        ${items.map(
-          (step) => b2`<div class="row">
-            <span class="name">${step.scene_id ? step.name : this._name(step.entity_id, step.name)}
-              ${step.issue ? b2`<span class="badge warn">${this._t(step.issue)}</span>` : A}</span>
-            <span class="muted">${this._summary(step)}${step.delay ? ` \xB7 +${step.delay} s` : ""}</span>
-          </div>`
-        )}`
-      );
+    // one line per step: "Küche – Licht: Decke 60 %, Wand Aus", "Küche – Szenen: Kochen", "+ 5 s" (spec 5.2)
+    _stepLine(step) {
+      const badge = (issue) => issue ? b2`<span class="badge warn">${this._t(issue)}</span>` : A;
+      if (step.type === "delay") return b2`<span class="name">+ ${this._num(step.seconds)} s</span>`;
+      if (step.type === "scene") return b2`<span class="name">${this._stepTitle(step)}: ${step.name}${badge(step.issue)}</span>`;
+      return b2`<span class="name">${this._stepTitle(step)}:
+      ${step.entries.length ? step.entries.map((e5, i7) => b2`${i7 ? ", " : ""}${this._name(e5.entity_id, e5.name)} ${this._summary(e5)}${badge(e5.issue)}`) : "\u2013"}</span>`;
     }
-    _summary(step) {
-      const pct = (v2) => `${Math.round(v2 * 100)} %`;
-      if (step.scene_id || step.call) return this._t("call");
-      if (step.music === "off") return this._t("off");
-      if (step.music === "on") return `${this._t("on")} \xB7 ${pct(step.volume)}`;
-      if (step.music === "favorite") return `${step.favorite_name} \xB7 ${pct(step.volume)}`;
-      const a3 = step.attributes ?? {};
-      if (step.state === "off") return this._t("off");
-      if (step.state === "closed") return this._t("closed");
+    _summary(entry) {
+      const pct = (v3) => `${Math.round(v3 * 100)} %`;
+      if (entry.call) return this._t("call");
+      if (entry.music === "off") return this._t("off");
+      if (entry.music === "on") return `${this._t("on")} \xB7 ${pct(entry.volume)}`;
+      if (entry.music === "favorite") return `${entry.favorite_name} \xB7 ${pct(entry.volume)}`;
+      const a3 = entry.attributes ?? {};
+      if (entry.state === "off") return this._t("off");
+      if (entry.state === "closed") return this._t("closed");
       if (a3.brightness != null) {
-        const color = a3.color_temp_kelvin ? ` \xB7 ${a3.color_temp_kelvin} K` : "";
-        return `${this._t("on")} \xB7 ${Math.round(a3.brightness / 2.55)} %${color}`;
+        const color = a3.color_temp_kelvin ? ` \xB7 ${this._num(a3.color_temp_kelvin)} K` : "";
+        return `${Math.round(a3.brightness / 2.55)} %${color}`;
       }
       if (a3.current_position != null) return `${a3.current_position} %`;
-      if (a3.temperature != null) return `${step.state} \xB7 ${a3.temperature} \xB0`;
-      if (a3.percentage != null) return `${this._t("on")} \xB7 ${a3.percentage} %`;
-      return step.state === "on" ? this._t("on") : step.state;
+      if (a3.temperature != null) return `${entry.state} \xB7 ${a3.temperature} \xB0`;
+      if (a3.percentage != null) return `${a3.percentage} %`;
+      return entry.state === "on" ? this._t("on") : entry.state;
+    }
+    // ---------- favorite slots (spec 4.7, V2) ----------
+    _renderSlots() {
+      const d3 = this._data;
+      const current = d3.favorites.indexOf(this._detail.id);
+      const ask = this._slots.ask;
+      return b2`<div class="overlay"><div class="dialog" role="dialog" aria-label=${this._t("favorites")}>
+      ${ask != null ? b2`<p>${this._t("slot")} ${ask + 1}: ${this._scene(d3.favorites[ask])?.name} ${this._t("loses")}</p>
+            <div class="actions">
+              <button class="primary" data-action="slot-confirm" @click=${() => this._setFavorite(ask, true)}>${this._t("replace")}</button>
+              <button data-action="slot-cancel" @click=${() => this._slots = {}}>${this._t("cancel")}</button></div>` : b2`<h3>${this._t("favorites")}</h3>
+            ${d3.favorites.map(
+        (id, i7) => b2`<button class="wide" data-action="slot" data-slot=${i7} aria-pressed=${i7 === current ? "true" : "false"}
+                @click=${() => this._setFavorite(i7)}>${this._t("slot")} ${i7 + 1} – ${id ? this._scene(id)?.name ?? "" : this._t("free")}</button>`
+      )}
+            ${current >= 0 ? b2`<button class="wide" data-action="slot-clear" @click=${() => this._setFavorite(null)}>${this._t("no_slot")}</button>` : A}
+            <button class="wide" data-action="slot-close" @click=${() => this._slots = null}>${this._t("close")}</button>`}
+    </div></div>`;
+    }
+    async _setFavorite(slot, confirmed = false) {
+      await this._load();
+      const fav = this._data.favorites;
+      const id = this._detail?.id;
+      const current = fav.indexOf(id);
+      const holder = slot == null ? null : fav[slot];
+      if (holder && holder !== id && !confirmed) return this._slots = { ask: slot };
+      this._slots = null;
+      try {
+        if (slot == null && current >= 0) {
+          await this.hass.callWS({ type: `${WS}/set_favorite`, scope: this._scope, slot: current, scene_id: null });
+        } else if (slot != null && holder !== id) {
+          await this.hass.callWS({ type: `${WS}/set_favorite`, scope: this._scope, slot, scene_id: id });
+        }
+      } catch (err) {
+        this._detailError = this._err(err.code);
+      }
+      await this._load();
     }
     // ---------- rights (spec 3) ----------
     async _openRights() {
       this._selected = null;
       this._detail = null;
+      this._edit = null;
       await this._loadRights();
     }
     _renderRights() {
       return b2`${this._narrow ? b2`<button data-action="back" @click=${this._back}>‹ ${this._t("back")}</button>` : A}
       <h2>${this._t("rights")}</h2>
       ${this._rights.map(
-        (a3) => b2`<label class="row">
+        (a3) => b2`<div class="row">
           <span class="name">${a3.name} ${a3.kind === "panel" ? b2`<span class="badge">${this._t("panel")}</span>` : A}</span>
-          <span class="muted">${this._t("may_edit")}</span>
-          <input type="checkbox" class="switch" data-field="right" data-id=${a3.user_id} .checked=${a3.can_edit}
-            @change=${(e5) => this._setRight(a3.user_id, e5.target.checked)} />
-        </label>`
+          ${this._switch("right", a3.can_edit, this._t("may_edit"), (on) => this._setRight(a3.user_id, on), a3.user_id)}
+        </div>`
       )}`;
     }
     async _setRight(userId, canEdit) {
@@ -1188,19 +1346,6 @@
         await this.hass.callWS({ type: `${WS}/set_right`, user_id: userId, can_edit: canEdit });
       } finally {
         await this._loadRights();
-      }
-    }
-    // ---------- detail actions ----------
-    async _setFavorite(value) {
-      const current = this._data.favorites.indexOf(this._selected);
-      try {
-        if (value === "" && current >= 0) {
-          await this.hass.callWS({ type: `${WS}/set_favorite`, scope: this._scope, slot: current, scene_id: null });
-        } else if (value !== "") {
-          await this.hass.callWS({ type: `${WS}/set_favorite`, scope: this._scope, slot: Number(value), scene_id: this._selected });
-        }
-      } catch (err) {
-        await this._load();
       }
     }
     async _undo() {
@@ -1212,180 +1357,406 @@
       }
       await this._load();
     }
-    // ---------- editor ----------
-    async _openEditor(scene) {
-      this._endPreview(true);
+    // ---------- custom controls (spec 5.7, V10) ----------
+    _switch(field, on, label, change, id) {
+      return b2`<button class="switch" role="switch" aria-checked=${on ? "true" : "false"} data-field=${field}
+      data-entity=${id ?? A} @click=${() => change(!on)}><span class="track"></span><span>${label}</span></button>`;
+    }
+    _seg(field, eid, options, current, pick) {
+      return b2`<div class="seg" role="radiogroup" data-field=${field} data-entity=${eid}>
+      ${options.map(([value, label]) => b2`<button role="radio" aria-checked=${value === current ? "true" : "false"}
+        data-value=${value} @click=${() => value !== current && pick(value)}>${label}</button>`)}</div>`;
+    }
+    // ---------- editor: every input is stored at once (spec 4.5) ----------
+    async _create() {
+      const edit = newId();
+      try {
+        const res = await this.hass.callWS({
+          type: `${WS}/create`,
+          area_id: this._house ? null : this._config.area,
+          name: this._t("new_scene"),
+          edit
+        });
+        await this._openScene(res.scene_id, edit);
+      } catch (err) {
+        this._notice = this._err(err.code);
+      }
+    }
+    async _openScene(id, edit) {
+      this._rights = null;
+      this._selected = id;
+      this._detail = null;
+      await this._openEditor(id, edit);
+      await this._loadDetail();
+    }
+    async _openEditor(sceneId, edit = newId()) {
       this._notice = null;
       this._rights = null;
-      let result;
+      this._edit = { id: edit, scene_id: sceneId, open: null, live: false, devices: [], favorites: [], images: [], room_scenes: [] };
+      await this._loadDevices();
+    }
+    async _loadDevices() {
       try {
-        result = await this.hass.callWS({ type: `${WS}/devices`, ...this._house ? {} : { area_id: this._config.area } });
+        const r5 = await this.hass.callWS({ type: `${WS}/devices`, ...this._house ? {} : { area_id: this._config.area } });
+        for (const dev of r5.entities) dev.label = this._name(dev.entity_id, dev.name);
+        r5.entities.sort((a3, b3) => a3.label.localeCompare(b3.label));
+        if (this._edit) this._setEdit({ devices: r5.entities, favorites: r5.favorites, images: r5.images, room_scenes: r5.room_scenes });
       } catch (err) {
-        return;
       }
-      const devices = result.entities;
-      const steps = /* @__PURE__ */ new Map();
-      for (const step of scene?.steps ?? []) {
-        if (step.scene_id) {
-          steps.set(`scene:${step.scene_id}`, {
-            choice: "scene",
-            scene_id: step.scene_id,
-            name: step.name,
-            area_id: result.room_scenes.find((r5) => r5.id === step.scene_id)?.area_id,
-            issue: step.issue,
-            delay: step.delay ?? 0
-          });
-          continue;
-        }
-        const s4 = { choice: "keep", stored: step, issue: step.issue, delay: step.delay ?? 0, values: this._valuesFromStep(step) };
-        if (step.music && step.music !== "off") Object.assign(s4, { volume: step.volume, favorite_id: step.favorite_id });
-        steps.set(step.entity_id, s4);
-        if (!devices.some((d3) => d3.entity_id === step.entity_id)) {
-          devices.push({
-            entity_id: step.entity_id,
-            name: this._name(step.entity_id, step.name),
-            domain: step.entity_id.split(".")[0],
-            area_id: this._entityArea(step.entity_id),
-            available: false,
-            released: false,
-            capabilities: {}
-          });
-        }
+    }
+    _setEdit(patch) {
+      this._edit = { ...this._edit, ...patch };
+    }
+    // one input = one command; changes come back through the subscription
+    async _send(type, fields = {}, at = "error") {
+      const e5 = this._edit;
+      this._setEdit({ error: null, nameError: null });
+      try {
+        return await this.hass.callWS({ type: `${WS}/${type}`, scene_id: e5.scene_id, edit: e5.id, ...fields });
+      } catch (err) {
+        const detail = /^\w+: (.+)$/.exec(err.message ?? "")?.[1] ?? "";
+        const named = /^[a-z_]+\.\S+$/.test(detail) ? this._name(detail) : detail;
+        if (this._edit) this._setEdit({ [at]: err.code ?? "default", errorDetail: named });
+        this._drafts.clear();
+        await this._loadDetail();
+        return void 0;
       }
-      for (const dev of devices) dev.label = this._name(dev.entity_id, dev.name);
-      devices.sort((a3, b3) => a3.label.localeCompare(b3.label));
-      this._edit = {
-        scene_id: scene?.id,
-        version: scene?.version,
-        name: scene?.name ?? "",
-        image: scene?.image ?? null,
-        imageUrl: scene?.image_url ?? null,
-        kind: scene?.kind ?? "resident",
-        content_released: scene?.content_released ?? false,
-        transition: scene?.transition ?? null,
-        steps,
-        devices,
-        original: new Map(steps),
-        favorites: result.favorites,
-        images: result.images,
-        room_scenes: result.room_scenes,
-        preview: !this._house
-        // spec 5.4: on for room scenes, off for house scenes
+    }
+    async _done() {
+      this._edit = null;
+      await this._loadDetail();
+    }
+    async _rename(name) {
+      if (name.trim() === this._detail.name) return;
+      await this._send("update", { name: name.trim() }, "nameError");
+    }
+    async _duplicate() {
+      const edit = newId();
+      const res = await this._send("duplicate", { suffix: ` (${this._t("copy")})`, edit });
+      if (res) await this._openScene(res.scene_id, edit);
+    }
+    async _addStep(fields) {
+      const res = await this._send("add_step", fields);
+      this._setEdit({ adding: null });
+      if (!res) return;
+      await this._loadDetail();
+      if (fields.step_type === "group") this._setEdit({ open: res.step_id, live: false });
+    }
+    _renderEditor() {
+      const e5 = this._edit;
+      const step = e5.open && this._detail.sequence.find((x2) => x2.id === e5.open);
+      return b2`${this._offline ? b2`<p class="error" role="alert">${this._t("offline")}</p>` : A}
+      <div class="editor" ?inert=${this._offline}>
+        ${e5.error ? b2`<p class="error" role="alert">${this._err(e5.error, e5.errorDetail)}</p>` : A}
+        ${step ? this._renderStep(step) : this._renderSequence()}
+      </div>
+      ${e5.confirmDelete ? this._renderConfirmDelete() : A}`;
+    }
+    _renderSequence() {
+      const e5 = this._edit;
+      const s5 = this._detail;
+      const d3 = this._data;
+      const own = s5.kind === "resident" || d3.is_admin;
+      const trades = this._house ? DOMAINS.filter((t5) => t5 !== "scene" && e5.devices.some((dev) => dev.domain === t5 && dev.released !== false)) : [];
+      return b2`<div class="bar">
+        <button class="icon" data-action="done-back" aria-label=${this._t("back")} @click=${this._done}>‹</button>
+        <span class="name">${s5.name}</span>
+        <button class="primary" data-action="done" @click=${this._done}>${this._t("done")}</button>
+      </div>
+      ${own ? b2`<label class="field">${this._t("name")}
+              <input data-field="name" data-key="name" maxlength=${d3.name_length} .value=${l3(this._draft("name", s5.name))}
+                @input=${this._keep("name")} @keydown=${(ev) => ev.key === "Enter" && ev.target.blur()}
+                @change=${(ev) => this._rename(ev.target.value)} />
+              ${e5.nameError ? b2`<span class="error" role="alert">${this._err(e5.nameError)}</span>` : A}</label>
+            ${this._renderImagePicker()}` : A}
+      <label class="field">${this._t("transition")}
+        <input type="number" min="0" max=${d3.max_transition} step="0.5" data-field="transition" data-key="transition"
+          .value=${l3(String(this._draft("transition", s5.transition ?? "")))} @input=${this._keep("transition")}
+          @change=${(ev) => this._send("update", { transition: ev.target.value === "" ? null : Number(ev.target.value) })} /></label>
+      ${d3.is_admin ? b2`${this._switch(
+        "kind",
+        s5.kind === "installer",
+        this._t("protected"),
+        (on) => this._send("update", { kind: on ? "installer" : "resident" })
+      )}
+            ${s5.kind === "installer" ? this._switch("released", s5.content_released, this._t("released"), (on) => this._send("update", { content_released: on })) : A}` : A}
+      ${trades.length ? b2`<h3>${this._t("all_house")}</h3>
+            <div class="actions">${trades.map(
+        (t5) => b2`<button data-action="house-off" data-domain=${t5} @click=${() => this._send("house_off", { domain: t5 })}>
+                ${this._t(t5)} · ${this._t(t5 === "cover" ? "all_closed" : "all_off")}</button>`
+      )}</div>` : A}
+      <h3>${this._t("order")}</h3>
+      ${s5.sequence.length ? c4(s5.sequence, (x2) => x2.id, (x2, i7) => this._renderStepRow(x2, i7)) : b2`<p class="muted">${this._t("no_steps")}</p>`}
+      ${e5.adding ? this._renderAdd() : A}
+      <div class="actions">
+        <button data-action="add-step" @click=${() => this._setEdit({ adding: {} })}>+ ${this._t("add_step")}</button>
+        <button data-action="add-delay" @click=${() => this._addStep({ step_type: "delay" })}>+ ${this._t("add_delay")}</button>
+        <button data-action="duplicate" @click=${this._duplicate}>${this._t("duplicate")}</button>
+        ${own ? b2`<button class="danger" data-action="ask-delete" @click=${() => this._setEdit({ confirmDelete: true })}>${this._t("delete")}</button>` : A}
+      </div>`;
+    }
+    _renderStepRow(step, i7) {
+      const remove = b2`<button class="icon" data-action="remove-step" data-id=${step.id} aria-label=${this._t("remove")}
+      @click=${() => this._send("remove_step", { step_id: step.id })}>✕</button>`;
+      const handle = b2`<span class="handle" role="button" tabindex="0" data-action="drag" data-id=${step.id}
+      aria-label=${this._t("drag")} title=${this._t("drag")} @pointerdown=${(ev) => this._drag(ev, i7)}
+      @keydown=${(ev) => this._dragKey(ev, step, i7)}>≡</span>`;
+      const cls = `row order ${this._dragTo === i7 ? "drop" : ""}`;
+      if (step.type === "delay") {
+        const max = this._data.max_delay;
+        const key = `delay:${step.id}`;
+        const set = (seconds) => this._send("set_delay", { step_id: step.id, seconds });
+        return b2`<div class=${cls}>${handle}
+        <div class="delay">
+          <button class="icon" data-action="delay-minus" aria-label="−1 s" ?disabled=${step.seconds <= 1}
+            @click=${() => set(step.seconds - 1)}>−</button>
+          <label class="plain">+ <input type="number" min="1" max=${max} step="1" inputmode="numeric" data-field="delay"
+            data-key=${key} aria-label=${this._t("seconds")} .value=${l3(String(this._draft(key, step.seconds)))}
+            @input=${this._keep(key)} @change=${(ev) => set(Number(ev.target.value))} /> s</label>
+          <button class="icon" data-action="delay-plus" aria-label="+1 s" ?disabled=${step.seconds >= max}
+            @click=${() => set(step.seconds + 1)}>+</button>
+        </div>${remove}</div>`;
+      }
+      return b2`<div class=${cls}>${handle}${this._stepLine(step)}
+      <div class="tools">
+        ${step.type === "group" ? b2`<button data-action="open" data-id=${step.id} @click=${() => this._setEdit({ open: step.id, live: false })}>
+              ${this._t("open")}</button>` : A}${remove}</div></div>`;
+    }
+    _dragKey(ev, step, i7) {
+      const to = ev.key === "ArrowUp" ? i7 - 1 : ev.key === "ArrowDown" ? i7 + 1 : -1;
+      if (to < 0 || to >= this._detail.sequence.length) return;
+      ev.preventDefault();
+      this._focusStep = { id: step.id, index: to };
+      this._send("move_step", { step_id: step.id, index: to });
+    }
+    // drag the handle of a row onto another row (spec 5.7); pointer events cover mouse, touch and pen
+    _drag(ev, from) {
+      ev.preventDefault();
+      const handle = ev.currentTarget;
+      handle.setPointerCapture?.(ev.pointerId);
+      const id = this._detail.sequence[from].id;
+      const move = (e5) => {
+        const rows = [...this.renderRoot.querySelectorAll(".row.order")];
+        const to = rows.findIndex((r5) => {
+          const b3 = r5.getBoundingClientRect();
+          return e5.clientY >= b3.top && e5.clientY < b3.bottom;
+        });
+        if (to >= 0 && to !== this._dragTo) this._dragTo = to, this.requestUpdate();
+        const edge = e5.clientY < 48 ? -1 : e5.clientY > window.innerHeight - 48 ? 1 : 0;
+        const next = Math.min(Math.max((to < 0 ? from : to) + edge, 0), rows.length - 1);
+        if (edge) rows[next]?.scrollIntoView?.({ block: "nearest" });
       };
+      const cancel = () => (this._dragTo = null, end());
+      const end = () => {
+        handle.removeEventListener("pointermove", move);
+        handle.removeEventListener("pointerup", end);
+        handle.removeEventListener("pointercancel", cancel);
+        const to = this._dragTo;
+        this._dragTo = null;
+        this.requestUpdate();
+        if (to != null && to !== from) this._send("move_step", { step_id: id, index: to });
+      };
+      handle.addEventListener("pointermove", move);
+      handle.addEventListener("pointerup", end);
+      handle.addEventListener("pointercancel", cancel);
+    }
+    _renderAdd() {
+      const e5 = this._edit;
+      const a3 = e5.adding;
+      const close = b2`<button data-action="add-cancel" @click=${() => this._setEdit({ adding: null })}>${this._t("cancel")}</button>`;
+      if (this._house && a3.area === void 0) {
+        const areas = [...new Set([...e5.devices.map((d3) => d3.area_id), ...e5.room_scenes.map((r5) => r5.area_id)].filter(Boolean))].sort((x2, y3) => this._areaName(x2).localeCompare(this._areaName(y3)));
+        return b2`<div class="pick"><h3>${this._t("pick_room")}</h3>
+        ${areas.map((id) => b2`<button data-action="pick-room" data-id=${id} @click=${() => this._setEdit({ adding: { area: id } })}>
+          ${this._areaName(id)}</button>`)}${close}</div>`;
+      }
+      const area = this._house ? a3.area : this._config.area;
+      const extra = this._house ? { area_id: area } : {};
+      if (a3.scenes) {
+        return b2`<div class="pick"><h3>${this._areaName(area)} – ${this._t("scene")}</h3>
+        ${e5.room_scenes.filter((r5) => r5.area_id === area).map(
+          (r5) => b2`<button data-action="pick-scene" data-id=${r5.id} @click=${() => this._addStep({ step_type: "scene", target: r5.id, ...extra })}>
+            ${r5.name}</button>`
+        )}${close}</div>`;
+      }
+      const domains = DOMAINS.filter((dm) => e5.devices.some((d3) => d3.domain === dm && d3.area_id === area && d3.released !== false));
+      const roomScenes = this._house && e5.room_scenes.some((r5) => r5.area_id === area);
+      return b2`<div class="pick"><h3>${this._house ? `${this._areaName(area)} \u2013 ` : ""}${this._t("pick_domain")}</h3>
+      ${domains.map((dm) => b2`<button data-action="pick-domain" data-domain=${dm}
+        @click=${() => this._addStep({ step_type: "group", domain: dm, ...extra })}>${this._t(dm === "scene" ? "other_scenes" : dm)}</button>`)}
+      ${roomScenes ? b2`<button data-action="pick-domain" data-domain="room_scene" @click=${() => this._setEdit({ adding: { area, scenes: true } })}>
+            ${this._t("scene")}</button>` : A}${close}</div>`;
+    }
+    // ---------- opened group step (spec 5.2, 5.4) ----------
+    _renderStep(step) {
+      const e5 = this._edit;
+      const devs = e5.devices.filter((d3) => d3.domain === step.domain && d3.area_id === step.area_id && d3.released !== false);
+      const gone = step.entries.filter((en) => !devs.some((d3) => d3.entity_id === en.entity_id)).map((en) => ({ entity_id: en.entity_id, label: this._name(en.entity_id, en.name), domain: step.domain, released: false, capabilities: {} }));
+      const all = [...devs, ...gone];
+      const set = (mode) => this._send("set_all", { step_id: step.id, mode, live: this._edit.live });
+      return b2`<div class="bar">
+        <button class="icon" data-action="close-step" aria-label=${this._t("back")} @click=${() => this._setEdit({ open: null })}>‹</button>
+        <h3 class="name">${this._stepTitle(step)}</h3>
+      </div>
+      ${LIVE.includes(step.domain) ? this._switch("live", e5.live, this._t("live"), (on) => (this._setEdit({ live: on }), on && set("capture"))) : A}
+      <div class="actions">
+        <button data-action="all" @click=${() => set("capture")}>${this._t("all")}</button>
+        <button data-action="all-off" @click=${() => set("off")}>${this._t(step.domain === "cover" ? "all_closed" : "all_off")}</button>
+      </div>
+      ${all.length ? c4(all, (d3) => d3.entity_id, (d3) => this._renderDevice(step, d3)) : b2`<p class="muted">${this._t("no_devices")}</p>`}`;
+    }
+    _renderDevice(step, dev) {
+      const eid = dev.entity_id;
+      const entry = step.entries.find((en) => en.entity_id === eid);
+      const locked = dev.released === false || FLAGS.includes(entry?.issue);
+      const st = this.hass.states[eid];
+      const why = entry?.issue ?? (dev.released === false ? "not_released" : !st ? "missing" : !dev.available ? "unavailable" : "");
+      const source = entry ?? (st && { entity_id: eid, state: st.state, attributes: st.attributes });
+      const tick = () => entry ? this._send("remove_entry", { step_id: step.id, entity_id: eid }) : this._send("set_entry", { step_id: step.id, entity_id: eid, mode: "capture", live: this._edit.live });
+      return b2`<div class="row device">
+      <button class="check" role="checkbox" aria-checked=${entry ? "true" : "false"} data-field="pick" data-entity=${eid}
+        aria-label=${dev.label} ?disabled=${locked && !entry} @click=${tick}></button>
+      <span class="name">${dev.label} ${why ? b2`<span class="badge warn">${this._t(why)}</span>` : A}</span>
+      ${locked || !source ? A : b2`<div class="controls">${this._renderValues(step, dev, entry, source)}</div>`}
+    </div>`;
     }
     _valuesFromStep(step) {
       const a3 = step.attributes ?? {};
       const domain = step.entity_id.split(".")[0];
       if (domain === "light") {
-        const v2 = { brightness: a3.brightness ?? 255 };
-        if (a3.color_temp_kelvin && (a3.color_mode === "color_temp" || !a3.hs_color)) v2.color_temp_kelvin = a3.color_temp_kelvin;
-        else if (a3.hs_color) Object.assign(v2, { hue: a3.hs_color[0], saturation: a3.hs_color[1] });
-        return v2;
+        const v3 = { brightness: a3.brightness ?? 255 };
+        if (a3.color_temp_kelvin && (a3.color_mode === "color_temp" || !a3.hs_color)) v3.color_temp_kelvin = a3.color_temp_kelvin;
+        else if (a3.hs_color) Object.assign(v3, { hue: a3.hs_color[0], saturation: a3.hs_color[1] });
+        return v3;
       }
       if (domain === "cover") return { position: a3.current_position ?? (step.state === "closed" ? 0 : 100), ...a3.current_tilt_position != null ? { tilt: a3.current_tilt_position } : {} };
       if (domain === "climate") return { hvac_mode: step.state, ...a3.temperature != null ? { temperature: a3.temperature } : {} };
       if (domain === "fan") return { percentage: a3.percentage ?? 50 };
-      if (domain === "switch") return { on: step.state === "on" };
       return {};
     }
-    _valuesFromState(dev) {
-      const st = this.hass.states[dev.entity_id];
-      if (!st) return {};
-      return this._valuesFromStep({ entity_id: dev.entity_id, state: st.state, attributes: st.attributes });
-    }
-    _canSet(dev) {
-      const c4 = dev.capabilities ?? {};
-      if (dev.domain === "light") return c4.brightness || c4.color_temp || c4.color;
-      if (dev.domain === "cover") return c4.position || c4.tilt;
-      if (dev.domain === "climate") return (c4.hvac_modes ?? []).length > 0;
-      return dev.domain === "fan" || dev.domain === "switch";
-    }
-    _groupKey(dev) {
-      return this._house ? dev.area_id ?? "" : dev.domain;
-    }
-    _renderEditor() {
-      const e5 = this._edit;
-      const d3 = this._data;
-      const groups = /* @__PURE__ */ new Map();
-      for (const dev of e5.devices.filter((x2) => x2.domain !== "scene")) {
-        const key = this._groupKey(dev);
-        if (!groups.has(key)) groups.set(key, []);
-        groups.get(key).push(dev);
+    // an input on an unticked device ticks it: set_entry adds the entry (spec 4.5)
+    _renderValues(step, dev, entry, source) {
+      const c5 = dev.capabilities ?? {};
+      const eid = dev.entity_id;
+      const v3 = this._valuesFromStep(source);
+      const on = !["off", "closed"].includes(source.state);
+      const base = { step_id: step.id, entity_id: eid, live: this._edit.live };
+      const set = (values) => this._send("set_entry", { ...base, mode: "set", values });
+      const off = () => this._send("set_entry", { ...base, mode: "off" });
+      const music = (m3, extra = {}) => this._send("set_entry", { ...base, mode: "music", music: m3, ...extra });
+      const slider = (field, label, min, max, value, unit, apply) => {
+        const key = `${field}:${step.id}:${eid}`;
+        const shown = this._draft(key, value);
+        return b2`<label class="slider"><span>${this._t(label)}</span><output>${this._num(shown)} ${unit}</output>
+        <input type="range" min=${min} max=${max} data-field=${field} data-entity=${eid} data-key=${key}
+          .value=${l3(String(shown))} @input=${this._keep(key)} @change=${(ev) => apply(Number(ev.target.value))} /></label>`;
+      };
+      const power = (send) => this._switch("on", on, this._t("on"), (o5) => o5 ? send() : off(), eid);
+      if (dev.domain === "light") {
+        const white = c5.color_temp && (!c5.color || v3.hue == null);
+        const kelvin = v3.color_temp_kelvin ?? c5.min_kelvin ?? 2700;
+        const colour = white ? { color_temp_kelvin: kelvin } : c5.color ? { hue: v3.hue ?? 30, saturation: v3.saturation ?? 100 } : {};
+        const send = (patch = {}) => set({ ...c5.brightness ? { brightness: v3.brightness } : {}, ...colour, ...patch });
+        return b2`${power(send)}
+        ${c5.brightness ? slider(
+          "brightness",
+          "brightness",
+          1,
+          100,
+          Math.round(v3.brightness / 2.55),
+          "%",
+          (p4) => send({ brightness: Math.max(1, Math.round(p4 * 2.55)) })
+        ) : A}
+        ${c5.color_temp && c5.color ? this._seg(
+          "light_mode",
+          eid,
+          [["white", this._t("white")], ["colour", this._t("colour")]],
+          white ? "white" : "colour",
+          (m3) => set({ brightness: v3.brightness, ...m3 === "white" ? { color_temp_kelvin: kelvin } : { hue: v3.hue ?? 30, saturation: v3.saturation ?? 100 } })
+        ) : A}
+        ${white ? slider(
+          "color_temp_kelvin",
+          "color_temp",
+          c5.min_kelvin ?? 2e3,
+          c5.max_kelvin ?? 6500,
+          kelvin,
+          "K",
+          (k2) => send({ color_temp_kelvin: k2 })
+        ) : A}
+        ${c5.color && !white ? b2`${slider("hue", "hue", 0, 360, v3.hue ?? 30, "\xB0", (h4) => send({ hue: h4 }))}
+              ${slider("saturation", "saturation", 0, 100, v3.saturation ?? 100, "%", (x2) => send({ saturation: x2 }))}` : A}`;
       }
-      const order = [...groups.keys()].sort(
-        (a3, b3) => this._house ? this._areaName(a3).localeCompare(this._areaName(b3)) : DOMAINS.indexOf(a3) - DOMAINS.indexOf(b3)
-      );
-      const trades = this._house ? DOMAINS.filter((t5) => t5 !== "scene" && e5.devices.some((dev) => dev.domain === t5 && dev.released !== false)) : [];
-      return b2`<div class="editor">
-      <label>${this._t("name")}<input data-field="name" maxlength=${d3.name_length} .value=${e5.name}
-        @input=${(ev) => e5.name = ev.target.value} /></label>
-      ${this._renderImagePicker()}
-      ${d3.is_admin ? b2`<label>${this._t("kind")}<select data-field="kind" @change=${(ev) => this._setEdit({ kind: ev.target.value })}>
-              <option value="resident" ?selected=${e5.kind === "resident"}>${this._t("resident")}</option>
-              <option value="installer" ?selected=${e5.kind === "installer"}>${this._t("installer")}</option></select></label>
-            ${e5.kind === "installer" ? b2`<label class="inline"><input type="checkbox" data-field="released" .checked=${e5.content_released}
-                  @change=${(ev) => e5.content_released = ev.target.checked} />${this._t("released")}</label>` : A}` : A}
-      <label>${this._t("transition")}<input type="number" min="0" max=${d3.max_transition} step="0.5" data-field="transition"
-        .value=${e5.transition ?? ""} @change=${(ev) => e5.transition = ev.target.value === "" ? null : Number(ev.target.value)} /></label>
-      <label class="inline"><input type="checkbox" class="switch" data-field="preview" .checked=${e5.preview}
-        @change=${(ev) => this._setEdit({ preview: ev.target.checked })} />${this._t("preview")}</label>
-      ${trades.length ? b2`<h3>${this._t("all_house")}</h3>
-            <div class="actions">${trades.map(
-        (t5) => b2`<button class="small" data-action="trade-off" data-domain=${t5}
-                @click=${() => this._allOff((dev) => dev.domain === t5)}>${this._t(t5)} · ${this._t(t5 === "cover" ? "all_closed" : "all_off")}</button>`
-      )}</div>` : A}
-      ${this._house ? this._renderRoomScenes() : A}
-      ${order.length ? order.map((key) => {
-        const devs = groups.get(key);
-        const all = devs.every((dev) => e5.steps.has(dev.entity_id));
-        const closeLabel = !this._house && key === "cover" ? "all_closed" : "all_off";
-        return b2`<h3><label class="inline"><input type="checkbox" data-field="all" data-group=${key} .checked=${all}
-                @change=${(ev) => this._pickAll(devs, ev.target.checked)} />
-                ${this._house ? this._areaName(key || null) : this._t(key)} · ${this._t("all")}</label>
-              <button class="small" data-action="group-off" data-group=${key}
-                @click=${() => this._allOff((dev) => this._groupKey(dev) === key)}>${this._t(closeLabel)}</button></h3>
-              ${devs.map((dev) => this._renderDevice(dev))}`;
-      }) : b2`<p class="muted">${this._t("no_devices")}</p>`}
-      ${this._renderOrder()}
-      ${e5.error ? b2`<p class="error" role="alert">${this._err(e5.error, e5.errorDetail)}</p>` : A}
-      ${e5.conflict ? b2`<div class="banner">${this._t("conflict")}
-            <button data-action="load-new" @click=${this._loadNew}>${this._t("load_new")}</button>
-            <button data-action="save-copy" @click=${() => this._save({ copy: true })}>${this._t("save_copy")}</button></div>` : A}
-      ${e5.confirmDelete ? this._renderConfirmDelete() : A}
-      <div class="actions">
-        <button class="primary" data-action="save" ?disabled=${e5.busy} @click=${() => this._save({})}>${this._t("save")}</button>
-        <button data-action="cancel" @click=${this._cancel}>${this._t("cancel")}</button>
-        ${e5.scene_id ? b2`<button data-action="duplicate" @click=${() => this._save({ copy: true })}>${this._t("duplicate")}</button>` : A}
-        ${e5.scene_id && (e5.kind === "resident" || d3.is_admin) ? b2`<button class="danger" data-action="ask-delete" @click=${() => this._setEdit({ confirmDelete: true })}>${this._t("delete")}</button>` : A}
-      </div></div>`;
+      if (dev.domain === "cover") {
+        const send = (patch) => set({ ...c5.position ? { position: v3.position } : {}, ...c5.tilt ? { tilt: v3.tilt ?? 50 } : {}, ...patch });
+        return b2`${c5.position ? slider("position", "position", 0, 100, v3.position, "%", (p4) => send({ position: p4 })) : A}
+        ${c5.tilt ? slider("tilt", "tilt", 0, 100, v3.tilt ?? 50, "%", (p4) => send({ tilt: p4 })) : A}`;
+      }
+      if (dev.domain === "climate") {
+        const key = `temperature:${step.id}:${eid}`;
+        const send = (patch) => set({ hvac_mode: v3.hvac_mode, ...v3.temperature != null ? { temperature: v3.temperature } : {}, ...patch });
+        return b2`${this._seg("hvac_mode", eid, (c5.hvac_modes ?? []).map((m3) => [m3, m3]), v3.hvac_mode, (m3) => send({ hvac_mode: m3 }))}
+        <label class="field">${this._t("temperature")}<input type="number" min=${c5.min_temp ?? 5} max=${c5.max_temp ?? 35}
+          step=${c5.temp_step ?? 0.5} data-field="temperature" data-entity=${eid} data-key=${key}
+          .value=${l3(String(this._draft(key, v3.temperature ?? "")))} @input=${this._keep(key)}
+          @change=${(ev) => send({ temperature: Number(ev.target.value) })} /></label>`;
+      }
+      if (dev.domain === "fan") {
+        return b2`${power(() => set({ percentage: v3.percentage }))}
+        ${slider("percentage", "percentage", 0, 100, v3.percentage, "%", (p4) => set({ percentage: p4 }))}`;
+      }
+      if (dev.domain === "switch") return power(() => set({ on: true }));
+      if (dev.domain === "media_player") {
+        const mode = entry ? entry.music : ["playing", "on"].includes(source.state) ? "on" : "off";
+        const volume = entry?.volume ?? this.hass.states[eid]?.attributes.volume_level ?? 0.3;
+        const favorite = entry?.favorite_id ?? this._edit.favorites[0]?.id;
+        const modes = [["off", this._t("off")], ["on", this._t("on")], ...dev.music_system ? [["favorite", this._t("favorite")]] : []];
+        const send = (m3, patch = {}) => music(m3, m3 === "off" ? {} : { volume, ...m3 === "favorite" ? { favorite_id: favorite ?? "" } : {}, ...patch });
+        return b2`${this._seg("music", eid, modes, mode, (m3) => send(m3))}
+        ${mode === "favorite" ? this._seg(
+          "favorite_id",
+          eid,
+          [
+            ...entry?.issue === "favorite_missing" ? [["", this._t("favorite_missing")]] : [],
+            ...this._edit.favorites.map((f3) => [f3.id, f3.name])
+          ],
+          entry?.issue === "favorite_missing" ? "" : favorite,
+          (id) => send("favorite", { favorite_id: id })
+        ) : A}
+        ${mode !== "off" ? slider("volume", "volume", 0, 100, Math.round(volume * 100), "%", (p4) => send(mode, { volume: p4 / 100 })) : A}`;
+      }
+      return A;
     }
-    _setEdit(patch) {
-      this._edit = { ...this._edit, ...patch };
-    }
+    // ---------- image (spec 4.8, 5.6) ----------
     _renderImagePicker() {
       const e5 = this._edit;
+      const s5 = this._detail;
       const crop = e5.crop;
-      return b2`<label>${this._t("image")}
-        <select data-field="image" @change=${(ev) => this._pickImage(ev.target.value)}>
-          <option value="">${this._t("no_image")}</option>
-          ${e5.image?.startsWith("upload:") ? b2`<option value=${e5.image} selected>${this._t("own_image")}</option>` : A}
-          ${e5.images.map((i6) => b2`<option value=${i6.name} ?selected=${i6.name === e5.image}>${i6.name}</option>`)}
-        </select></label>
-      <label class="file">${this._t("own_image")}
-        <input type="file" accept="image/*" data-field="upload" @change=${(ev) => this._openCrop(ev.target.files?.[0])} /></label>
+      return b2`<div class="field"><span>${this._t("image")}</span>
+      <button class="image-btn" data-action="image" @click=${() => this._setEdit({ picking: !e5.picking })}>
+        ${s5.image_url ? b2`<img src=${s5.image_url} alt="" />` : b2`<span class="thumb">${PLACEHOLDER}</span>`}
+        <span>${this._t("choose_image")}</span></button>
+      ${e5.picking ? b2`<div class="tiles">
+            <button class="tile" data-action="pick-image" data-name="" @click=${() => this._pickImage(null)}>
+              <span>${this._t("no_image")}</span></button>
+            ${e5.images.map((i7) => b2`<button class="tile" data-action="pick-image" data-name=${i7.name}
+              aria-pressed=${i7.name === s5.image ? "true" : "false"} @click=${() => this._pickImage(i7.name)}>
+              <img src=${i7.url} alt="" /><span>${i7.name}</span></button>`)}
+            <button class="tile" data-action="upload" @click=${() => this.renderRoot.querySelector('[data-field="upload"]').click()}>
+              <span>${this._t("own_image")}</span></button>
+          </div>
+          <input type="file" accept="image/*" hidden data-field="upload" @change=${(ev) => this._openCrop(ev.target.files?.[0])} />` : A}
       ${crop ? b2`<div class="crop">
             <canvas width=${TILE.w / 2} height=${TILE.h / 2}></canvas>
-            <label>${this._t("crop_x")}<input type="range" min="0" max="100" .value=${String(crop.x)}
+            <label class="slider"><span>${this._t("crop_x")}</span><input type="range" min="0" max="100" .value=${String(crop.x)}
               @input=${(ev) => this._moveCrop({ x: Number(ev.target.value) })} /></label>
-            <label>${this._t("crop_y")}<input type="range" min="0" max="100" .value=${String(crop.y)}
+            <label class="slider"><span>${this._t("crop_y")}</span><input type="range" min="0" max="100" .value=${String(crop.y)}
               @input=${(ev) => this._moveCrop({ y: Number(ev.target.value) })} /></label>
             <button class="primary" data-action="use-image" @click=${this._upload}>${this._t("use_image")}</button>
-          </div>` : e5.imageUrl ? b2`<img class="hero" src=${e5.imageUrl} alt="" />` : A}`;
+          </div>` : A}</div>`;
     }
     _pickImage(name) {
-      const image = name || null;
-      const url = this._edit.images.find((i6) => i6.name === image)?.url ?? (image === this._edit.image ? this._edit.imageUrl : null);
-      this._setEdit({ image, imageUrl: url });
+      this._setEdit({ picking: false });
+      this._send("update", { image: name });
     }
     async _openCrop(file) {
       if (!file) return;
@@ -1397,7 +1768,7 @@
         this._setEdit({ error: "invalid_image_file", errorDetail: "" });
         return;
       }
-      this._setEdit({ crop: { img, x: 50, y: 50 }, error: null });
+      this._setEdit({ crop: { img, x: 50, y: 50 }, picking: false, error: null });
       await this.updateComplete;
       this._drawCrop(this.renderRoot.querySelector(".crop canvas"));
     }
@@ -1427,293 +1798,32 @@
         const res = await this.hass.fetchWithAuth(`/api/${WS}/upload`, { method: "POST", body: form });
         const body = await res.json();
         if (!res.ok) throw body;
-        this._setEdit({ image: body.image, imageUrl: body.url, crop: null, error: null });
+        this._setEdit({ crop: null });
+        await this._send("update", { image: body.image });
       } catch (err) {
         const detail = /: (.+)$/.exec(err.message ?? "")?.[1] ?? "";
         this._setEdit({ crop: null, error: err.code ?? "invalid_image_file", errorDetail: detail });
       }
     }
-    _renderRoomScenes() {
-      const e5 = this._edit;
-      const areas = [...new Set(e5.room_scenes.map((r5) => r5.area_id))].sort((a3, b3) => this._areaName(a3).localeCompare(this._areaName(b3)));
-      const missing = [...e5.steps].filter(([, s4]) => s4.choice === "scene" && ["scene_missing", "no_room_scene"].includes(s4.issue));
-      return b2`<h3>${this._t("scene")}</h3>
-      ${areas.map((area) => {
-        const current = [...e5.steps.values()].find((s4) => s4.choice === "scene" && s4.area_id === area)?.scene_id ?? "";
-        return b2`<label>${this._areaName(area)} · ${this._t("room_scene")}
-          <select data-field="room-scene" data-group=${area} @change=${(ev) => this._setRoomScene(area, ev.target.value)}>
-            <option value="">${this._t("none")}</option>
-            ${e5.room_scenes.filter((r5) => r5.area_id === area).map(
-          (r5) => b2`<option value=${r5.id} ?selected=${r5.id === current}>${r5.name}</option>`
-        )}
-          </select></label>`;
-      })}
-      ${missing.map(
-        ([key, s4]) => b2`<div class="row"><span class="name">${s4.name}
-          <span class="badge warn">${this._t(s4.issue)}</span></span>
-          <button data-action="remove" @click=${() => this._removeStep(key)}>${this._t("remove")}</button></div>`
-      )}`;
-    }
-    _setRoomScene(area, sceneId) {
-      const steps = new Map([...this._edit.steps].filter(([, s4]) => !(s4.choice === "scene" && s4.area_id === area)));
-      const scene = this._edit.room_scenes.find((r5) => r5.id === sceneId);
-      if (scene) steps.set(`scene:${scene.id}`, { choice: "scene", scene_id: scene.id, name: scene.name, area_id: area, delay: 0 });
-      this._setEdit({ steps });
-    }
-    _removeStep(key) {
-      const steps = new Map(this._edit.steps);
-      steps.delete(key);
-      this._setEdit({ steps });
-    }
-    _renderDevice(dev) {
-      const step = this._edit.steps.get(dev.entity_id);
-      const locked = dev.released === false || ["missing", "not_released", "other_area"].includes(step?.issue);
-      let controls = A;
-      if (step) {
-        const choices = [];
-        if (step.stored) choices.push("keep");
-        if (!locked) {
-          choices.push("capture", "off");
-          if (this._canSet(dev) && dev.domain !== "media_player") choices.push("set");
-          if (dev.domain === "media_player") choices.push("on");
-          if (dev.domain === "media_player" && dev.music_system) choices.push("favorite");
-        }
-        const label = (c4) => this._t(c4 === "off" && dev.domain === "cover" ? "closed" : c4);
-        controls = b2`<select data-field="choice" data-entity=${dev.entity_id} aria-label=${dev.label}
-          .value=${l3(step.choice)} @change=${(ev) => this._choose(dev, ev.target.value)}>
-          ${choices.map((c4) => b2`<option value=${c4} ?selected=${c4 === step.choice}>${label(c4)}</option>`)}
-        </select>
-        ${step.choice === "set" ? this._renderValues(dev, step) : A}
-        ${step.choice === "favorite" ? b2`<select data-field="favorite_id" data-entity=${dev.entity_id} aria-label=${this._t("favorite")}
-              @change=${(ev) => this._change(dev, { favorite_id: ev.target.value })}>
-              ${step.issue === "favorite_missing" ? b2`<option value="" selected>${this._t("favorite_missing")}</option>` : A}
-              ${this._edit.favorites.map((f3) => b2`<option value=${f3.id} ?selected=${f3.id === step.favorite_id}>${f3.name}</option>`)}
-            </select>` : A}
-        ${step.choice === "on" || step.choice === "favorite" ? b2`<input type="range" min="0" max="100" data-field="volume" data-entity=${dev.entity_id}
-              .value=${String(Math.round((step.volume ?? 0.3) * 100))} aria-label=${this._t("volume")}
-              @change=${(ev) => this._change(dev, { volume: Number(ev.target.value) / 100 })} />` : A}`;
-      }
-      const st = this.hass.states[dev.entity_id];
-      const why = step?.issue ?? (dev.released === false ? "not_released" : !st ? "missing" : !dev.available ? "unavailable" : "");
-      return b2`<div class="row device">
-      <label class="name inline"><input type="checkbox" data-field="pick" data-entity=${dev.entity_id} .checked=${!!step}
-        @change=${(ev) => this._pick(dev, ev.target.checked)} />
-        ${dev.label} ${why ? b2`<span class="badge warn">${this._t(why)}</span>` : A}</label>${controls}
-    </div>`;
-    }
-    _renderValues(dev, step) {
-      const c4 = dev.capabilities ?? {};
-      const v2 = step.values ?? {};
-      const slider = (key, label, min, max, value, toValue = Number) => b2`<label class="value">${this._t(label)}
-      <input type="range" min=${min} max=${max} data-field=${key} data-entity=${dev.entity_id} .value=${String(value)}
-        @change=${(ev) => this._change(dev, { values: { ...step.values, [key]: toValue(ev.target.value) } })} /></label>`;
-      if (dev.domain === "light") {
-        const white = c4.color_temp && (!c4.color || v2.hue == null);
-        const kelvin = v2.color_temp_kelvin ?? c4.min_kelvin ?? 2700;
-        const mode = (m3) => this._change(dev, { values: m3 === "white" ? { brightness: v2.brightness, color_temp_kelvin: kelvin } : { brightness: v2.brightness, hue: v2.hue ?? 30, saturation: v2.saturation ?? 100 } });
-        return b2`${slider("brightness", "brightness", 1, 100, Math.round((v2.brightness ?? 255) / 2.55), (p4) => Math.max(1, Math.round(p4 * 2.55)))}
-        ${c4.color_temp && c4.color ? b2`<select data-field="light_mode" data-entity=${dev.entity_id} aria-label=${this._t("hue")}
-              .value=${l3(white ? "white" : "colour")} @change=${(ev) => mode(ev.target.value)}>
-              <option value="white" ?selected=${white}>${this._t("white")}</option>
-              <option value="colour" ?selected=${!white}>${this._t("colour")}</option></select>` : A}
-        ${white ? slider("color_temp_kelvin", "color_temp", c4.min_kelvin ?? 2e3, c4.max_kelvin ?? 6500, kelvin) : A}
-        ${c4.color && !white ? b2`${slider("hue", "hue", 0, 360, v2.hue ?? 30)}${slider("saturation", "saturation", 0, 100, v2.saturation ?? 100)}` : A}`;
-      }
-      if (dev.domain === "cover") {
-        return b2`${c4.position ? slider("position", "position", 0, 100, v2.position ?? 100) : A}
-        ${c4.tilt ? slider("tilt", "tilt", 0, 100, v2.tilt ?? 50) : A}`;
-      }
-      if (dev.domain === "climate") {
-        return b2`<select data-field="hvac_mode" data-entity=${dev.entity_id} aria-label=${this._t("mode")}
-          @change=${(ev) => this._change(dev, { values: { ...step.values, hvac_mode: ev.target.value } })}>
-          ${(c4.hvac_modes ?? []).map((m3) => b2`<option value=${m3} ?selected=${m3 === v2.hvac_mode}>${m3}</option>`)}
-        </select>
-        <label class="value">${this._t("temperature")}<input type="number" min=${c4.min_temp ?? 5} max=${c4.max_temp ?? 35}
-          step=${c4.temp_step ?? 0.5} data-field="temperature" data-entity=${dev.entity_id} .value=${String(v2.temperature ?? "")}
-          @change=${(ev) => this._change(dev, { values: { ...step.values, temperature: Number(ev.target.value) } })} /></label>`;
-      }
-      if (dev.domain === "fan") return slider("percentage", "position", 0, 100, v2.percentage ?? 50);
-      if (dev.domain === "switch") {
-        return b2`<input type="checkbox" class="switch" data-field="on" data-entity=${dev.entity_id} .checked=${!!v2.on}
-        aria-label=${this._t("on")} @change=${(ev) => this._change(dev, { values: { on: ev.target.checked } })} />`;
-      }
-      return A;
-    }
-    _renderOrder() {
-      const steps = [...this._edit.steps];
-      if (!steps.length) return A;
-      const max = this._data.max_delay;
-      return b2`<h3>${this._t("order")}</h3>
-      ${steps.map(([key, s4], i6) => b2`<div class="row order ${this._dragTo === i6 ? "drop" : ""}">
-        <span class="handle" data-action="drag" title=${this._t("drag")} aria-hidden="true"
-          @pointerdown=${(ev) => this._drag(ev, i6)}>≡</span>
-        <span class="name">${s4.choice === "scene" ? s4.name : this._edit.devices.find((d3) => d3.entity_id === key)?.label ?? key}</span>
-        <label class="value">${this._t("delay")}<input type="number" min="0" max=${max} data-field="delay" data-entity=${key}
-          .value=${String(s4.delay ?? 0)} @change=${(ev) => this._setDelay(key, Number(ev.target.value))} /></label>
-        <button class="icon" data-action="up" aria-label=${this._t("up")} ?disabled=${i6 === 0} @click=${() => this._move(i6, -1)}>↑</button>
-        <button class="icon" data-action="down" aria-label=${this._t("down")} ?disabled=${i6 === steps.length - 1}
-          @click=${() => this._move(i6, 1)}>↓</button>
-      </div>`)}`;
-    }
-    _setDelay(key, delay) {
-      this._edit.steps.get(key).delay = Math.max(0, delay || 0);
-      this.requestUpdate();
-    }
-    _move(index, by) {
-      this._moveTo(index, index + by);
-    }
-    _moveTo(from, to) {
-      const steps = [...this._edit.steps];
-      steps.splice(to, 0, ...steps.splice(from, 1));
-      this._setEdit({ steps: new Map(steps) });
-    }
-    // drag the handle of a row onto another row (spec 5.7); pointer events cover mouse, touch and pen
-    _drag(ev, from) {
-      ev.preventDefault();
-      const handle = ev.currentTarget;
-      handle.setPointerCapture?.(ev.pointerId);
-      const rows = [...this.renderRoot.querySelectorAll(".row.order")].map((r5) => r5.getBoundingClientRect());
-      const move = (e5) => {
-        const to = rows.findIndex((b3) => e5.clientY >= b3.top && e5.clientY < b3.bottom);
-        if (to >= 0 && to !== this._dragTo) this._dragTo = to, this.requestUpdate();
-      };
-      const cancel = () => (this._dragTo = null, end());
-      const end = () => {
-        handle.removeEventListener("pointermove", move);
-        handle.removeEventListener("pointerup", end);
-        handle.removeEventListener("pointercancel", cancel);
-        const to = this._dragTo;
-        this._dragTo = null;
-        if (to != null && to !== from) this._moveTo(from, to);
-        else this.requestUpdate();
-      };
-      handle.addEventListener("pointermove", move);
-      handle.addEventListener("pointerup", end);
-      handle.addEventListener("pointercancel", cancel);
-    }
-    _pick(dev, on) {
-      this._pickAll([dev], on);
-    }
-    _pickAll(devs, on) {
-      const steps = new Map(this._edit.steps);
-      for (const dev of devs) {
-        if (!on) steps.delete(dev.entity_id);
-        else if (!steps.has(dev.entity_id)) steps.set(dev.entity_id, this._edit.original.get(dev.entity_id) ?? { choice: "capture", delay: 0 });
-      }
-      this._setEdit({ steps });
-    }
-    _choose(dev, choice) {
-      const step = this._edit.steps.get(dev.entity_id);
-      const patch = { choice };
-      if (choice === "set" && !step.values) patch.values = this._valuesFromState(dev);
-      if (choice === "favorite" && !step.favorite_id) patch.favorite_id = this._edit.favorites[0]?.id;
-      this._change(dev, patch);
-    }
-    _change(dev, patch) {
-      const step = { ...this._edit.steps.get(dev.entity_id), ...patch };
-      if (patch.favorite_id) step.issue = null;
-      this._edit.steps.set(dev.entity_id, step);
-      this.requestUpdate();
-      this._preview(dev.entity_id, step);
-    }
-    _allOff(match) {
-      const steps = new Map(this._edit.steps);
-      for (const dev of this._edit.devices.filter((d3) => match(d3) && d3.domain !== "scene" && d3.released !== false)) {
-        const step = { delay: 0, ...steps.get(dev.entity_id), choice: "off" };
-        steps.set(dev.entity_id, step);
-        this._preview(dev.entity_id, step);
-      }
-      this._setEdit({ steps });
-    }
-    _stepPayload(key, s4) {
-      const delay = s4.delay ? { delay: s4.delay } : {};
-      if (s4.choice === "scene") return { mode: "scene", scene_id: s4.scene_id, ...delay };
-      if (s4.choice === "on" || s4.choice === "favorite") {
-        return {
-          entity_id: key,
-          mode: "music",
-          music: s4.choice,
-          volume: s4.volume ?? 0.3,
-          ...s4.choice === "favorite" ? { favorite_id: s4.favorite_id ?? "" } : {},
-          ...delay
-        };
-      }
-      if (s4.choice === "set") return { entity_id: key, mode: "set", values: s4.values ?? {}, ...delay };
-      return { entity_id: key, mode: s4.choice, ...delay };
-    }
-    _payloadSteps() {
-      return [...this._edit.steps].map(([key, s4]) => this._stepPayload(key, s4));
-    }
-    // live preview (spec 5.4): every change switches the device; cancel restores the state from before
-    _preview(key, s4) {
-      if (!this._edit?.preview || !["off", "set", "on"].includes(s4.choice)) return;
-      const { delay, ...step } = this._stepPayload(key, s4);
-      this._previewed = true;
-      this.hass.callWS({ type: `${WS}/preview`, step, edit: this._editKey, ...this._house ? {} : { area_id: this._config.area } }).catch(() => {
-      });
-    }
-    _endPreview(restore) {
-      if (!this._previewed) return;
-      this._previewed = false;
-      this.hass.callWS({ type: `${WS}/preview_end`, restore, edit: this._editKey }).catch(() => {
-      });
-    }
-    _cancel() {
-      this._endPreview(true);
-      this._edit = null;
-    }
-    async _loadNew() {
-      this._endPreview(true);
-      this._selected = this._edit.scene_id;
-      await this._loadDetail();
-      await this._openEditor(this._detail);
-    }
+    // ---------- delete (V13: a dialog over the card) ----------
     _renderConfirmDelete() {
-      const used = this._detail?.id === this._edit.scene_id ? this._detail.used_in : { scenes: [], slots: [] };
-      const slots = used.slots.map((s4) => {
-        const [scope, n4] = s4.split(":");
+      const used = this._detail.used_in ?? { scenes: [], slots: [] };
+      const slots = used.slots.map((s5) => {
+        const [scope, n4] = s5.split(":");
         return `${this._areaName(scope === HOUSE ? null : scope)} ${this._t("slot")} ${n4}`;
       });
       const all = [...used.scenes, ...slots];
-      return b2`<div class="banner" role="alertdialog">${this._t("confirm_delete")}
+      return b2`<div class="overlay"><div class="dialog" role="alertdialog">${this._t("confirm_delete")}
       ${all.length ? b2`<br />${this._t("used_on")} ${all.join(", ")}` : A}
-      <br /><span class="muted">${this._t("outside_note")}</span><br />
-      <button class="danger" data-action="delete" @click=${this._delete}>${this._t("yes")}</button>
-      <button data-action="keep-scene" @click=${() => this._setEdit({ confirmDelete: false })}>${this._t("no")}</button></div>`;
-    }
-    async _save({ copy }) {
-      const e5 = this._edit;
-      const taken = this._scenes.some((s4) => s4.id !== e5.scene_id && s4.name.trim().toLowerCase() === e5.name.trim().toLowerCase());
-      if (taken && !copy) return this._setEdit({ error: "name_exists", errorDetail: "" });
-      const msg = { type: `${WS}/save`, name: e5.name, image: e5.image, transition: e5.transition, steps: this._payloadSteps() };
-      if (!this._house) msg.area_id = this._config.area;
-      if (this._data.is_admin) Object.assign(msg, { kind: e5.kind, content_released: e5.content_released });
-      if (copy && e5.scene_id) {
-        const suffix = ` (${this._t("copy")})`;
-        msg.name = e5.name.slice(0, this._data.name_length - suffix.length) + suffix;
-        msg.copy_from = e5.scene_id;
-      } else if (e5.scene_id) {
-        Object.assign(msg, { scene_id: e5.scene_id, version: e5.version });
-      }
-      this._setEdit({ busy: true, error: null });
-      try {
-        const res = await this.hass.callWS(msg);
-        this._endPreview(false);
-        this._edit = null;
-        this._selected = res.scene_id;
-        await this._load();
-      } catch (err) {
-        const conflict = err.code === "version_conflict";
-        const detail = /^\w+: (.+)$/.exec(err.message ?? "")?.[1] ?? "";
-        const named = /^[a-z_]+\.\S+$/.test(detail) ? this._name(detail) : detail;
-        this._setEdit({ busy: false, conflict, error: conflict ? null : err.code ?? "default", errorDetail: named });
-      }
+      <br /><span class="muted">${this._t("outside_note")}</span>
+      <div class="actions">
+        <button class="danger" data-action="delete" @click=${this._delete}>${this._t("yes")}</button>
+        <button data-action="keep-scene" @click=${() => this._setEdit({ confirmDelete: false })}>${this._t("no")}</button>
+      </div></div></div>`;
     }
     async _delete() {
-      const id = this._edit.scene_id;
       try {
-        await this.hass.callWS({ type: `${WS}/delete`, scene_id: id });
-        this._endPreview(true);
+        await this.hass.callWS({ type: `${WS}/delete`, scene_id: this._edit.scene_id });
         this._edit = null;
         this._selected = null;
         this._detail = null;
@@ -1722,7 +1832,7 @@
       }
     }
   };
-  // keeps the preview of each card apart (review T2)
+  // what the user is typing or dragging, kept over updates from the server (spec 5.6)
   __publicField(ResidentScenesCard, "properties", {
     hass: { attribute: false },
     _data: { state: true },
@@ -1732,47 +1842,77 @@
     _selected: { state: true },
     _narrow: { state: true },
     _notice: { state: true },
-    _stale: { state: true }
+    _stale: { state: true },
+    _slots: { state: true },
+    _played: { state: true },
+    _offline: { state: true }
   });
   __publicField(ResidentScenesCard, "styles", i`
     :host { display: block; }
-    .card { background: var(--ha-card-background, var(--card-background-color, #fff)); color: var(--primary-text-color);
+    .card { position: relative; background: var(--ha-card-background, var(--card-background-color, #fff)); color: var(--primary-text-color);
       border-radius: var(--ha-card-border-radius, 12px); box-shadow: var(--ha-card-box-shadow, none);
       border: var(--ha-card-border-width, 1px) solid var(--ha-card-border-color, var(--divider-color)); padding: 16px; }
     h2 { margin: 8px 0; font-size: 1.4em; } h3 { margin: 16px 0 4px; font-size: 1em; color: var(--secondary-text-color); }
-    button, select, input[type=number], input:not([type]) { min-height: 44px; font: inherit; color: inherit; border-radius: 8px;
-      border: 1px solid var(--divider-color); background: transparent; padding: 0 12px; box-sizing: border-box; }
+    button, input[type=number], input:not([type]) { min-height: 44px; font: inherit; color: inherit; border-radius: 8px;
+      border: 1px solid var(--divider-color); background: transparent; padding: 0 12px; box-sizing: border-box; max-width: 100%; }
     button { cursor: pointer; min-width: 44px; }
-    button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid var(--primary-color); }
+    button:focus-visible, input:focus-visible, .handle:focus-visible { outline: 2px solid var(--primary-color); }
     button.primary { background: var(--primary-color); color: var(--text-primary-color, #fff); border-color: var(--primary-color); }
     button.danger { color: var(--error-color); border-color: var(--error-color); }
     button.link { border: none; text-align: left; padding: 0; } button.wide { width: 100%; margin-bottom: 8px; }
-    input[type=checkbox] { width: 24px; height: 24px; min-width: 24px; margin: 10px; accent-color: var(--primary-color); }
-    input[type=range] { min-height: 44px; accent-color: var(--primary-color); }
+    button[aria-pressed=true] { border-color: var(--primary-color); color: var(--primary-color); }
     input[type=number] { width: 7em; }
+    input[type=range] { width: 100%; min-height: 44px; margin: 0; accent-color: var(--primary-color); }
     .row { display: flex; align-items: center; gap: 8px; min-height: 48px; border-bottom: 1px solid var(--divider-color); flex-wrap: wrap; }
-    .row.selected { background: var(--secondary-background-color); } .row .name { flex: 1; min-width: 140px; }
-    .thumb { width: 40px; height: 40px; border-radius: 6px; object-fit: cover; background: var(--secondary-background-color); flex: none; }
-    .hero { width: 100%; max-height: 180px; object-fit: cover; border-radius: 8px; }
+    .row.selected { background: var(--secondary-background-color); box-shadow: inset 4px 0 var(--primary-color); }
+    .row.selected .name { color: var(--primary-color); font-weight: 500; }
+    .row .name { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+    .thumb { width: 40px; height: 40px; border-radius: 6px; object-fit: cover; background: var(--secondary-background-color); flex: none;
+      display: inline-flex; align-items: center; justify-content: center; color: var(--secondary-text-color); }
+    .thumb svg { width: 24px; height: 24px; }
+    .hero { width: 100%; aspect-ratio: 4 / 3; object-fit: contain; border-radius: 8px; }
     .head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; } .head h2 { flex: 1 1 100%; }
     .columns { display: grid; grid-template-columns: minmax(220px, 1fr) 2fr; gap: 24px; }
-    .editor label { display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; }
-    .editor label.inline, .editor h3 label, .device label.name { flex-direction: row; align-items: center; margin: 0; }
-    .editor label.value { flex-direction: row; align-items: center; gap: 8px; margin: 0; }
-    .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
-    button.small { font-size: .85em; margin-left: 8px; } button:disabled { opacity: .5; cursor: default; }
+    .bar { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; } .bar .name { flex: 1; min-width: 0; margin: 0; }
+    .field { display: flex; flex-direction: column; gap: 4px; margin: 8px 0; }
+    .actions, .pick, .tools, .delay, .controls, .seg { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+    .actions { margin-top: 16px; } .pick { margin: 8px 0; }
+    .controls { flex: 1 1 100%; padding-bottom: 8px; }
+    .seg button[aria-checked=true] { background: var(--primary-color); color: var(--text-primary-color, #fff); border-color: var(--primary-color); }
+    .slider { flex: 1 1 100%; display: grid; grid-template-columns: 1fr auto; align-items: center; }
+    .slider input { grid-column: 1 / -1; }
+    .plain { display: flex; align-items: center; gap: 4px; } .plain input { width: 5em; text-align: center; }
+    button.switch { display: inline-flex; align-items: center; gap: 12px; border: none; padding: 0 4px; text-align: left; }
+    .switch .track { position: relative; width: 40px; height: 22px; border-radius: 11px; flex: none;
+      background: var(--disabled-color, #bdbdbd); transition: background .2s; }
+    .switch .track::after { content: ""; position: absolute; top: 2px; left: 2px; width: 18px; height: 18px; border-radius: 50%;
+      background: #fff; transition: transform .2s; }
+    .switch[aria-checked=true] .track { background: var(--primary-color); }
+    .switch[aria-checked=true] .track::after { transform: translateX(18px); }
+    button.check { width: 44px; padding: 0; position: relative; flex: none; }
+    button.check::after { content: ""; position: absolute; inset: 11px; border: 2px solid var(--secondary-text-color); border-radius: 4px; }
+    button.check[aria-checked=true]::after { background: var(--primary-color); border-color: var(--primary-color); }
+    button.check[aria-checked=true]::before { content: "✓"; position: relative; z-index: 1; color: var(--text-primary-color, #fff); }
+    button:disabled { opacity: .5; cursor: default; }
     .badge { font-size: .75em; padding: 2px 6px; border-radius: 4px; background: var(--secondary-background-color); margin-left: 4px; }
     .badge.warn { background: var(--warning-color, #f4b400); color: #000; }
     .muted { color: var(--secondary-text-color); } .error { color: var(--error-color); }
     .banner { padding: 12px; border-radius: 8px; background: var(--secondary-background-color); margin: 8px 0; }
-    .banner button { margin: 8px 8px 0 0; } .heart select { min-width: 90px; }
+    .banner button { margin: 8px 8px 0 0; }
+    .overlay { position: absolute; inset: 0; z-index: 2; display: flex; align-items: flex-start; justify-content: center;
+      background: rgba(0, 0, 0, .4); border-radius: inherit; padding: 16px; box-sizing: border-box; }
+    .dialog { background: var(--ha-card-background, var(--card-background-color, #fff)); border-radius: 12px; padding: 16px;
+      width: 100%; max-width: 400px; box-sizing: border-box; position: sticky; top: 16px; }
+    .image-btn { display: flex; align-items: center; gap: 12px; padding: 4px 12px 4px 4px; align-self: flex-start; }
+    .image-btn img { width: 64px; aspect-ratio: 4 / 3; object-fit: cover; border-radius: 6px; }
     .crop canvas { width: 100%; max-width: 320px; aspect-ratio: 4 / 3; border-radius: 8px; background: var(--secondary-background-color); }
     .handle { cursor: grab; touch-action: none; user-select: none; min-width: 44px; min-height: 44px; display: flex;
-      align-items: center; justify-content: center; font-size: 1.4em; color: var(--secondary-text-color); }
+      align-items: center; justify-content: center; font-size: 1.4em; color: var(--secondary-text-color); border-radius: 8px; }
     .row.drop { outline: 2px dashed var(--primary-color); }
-    .tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 12px; }
-    .tile { position: relative; height: 110px; padding: 0; overflow: hidden; display: flex; align-items: flex-end; }
-    .tile img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+    .tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 12px; }
+    .tile { position: relative; aspect-ratio: 4 / 3; padding: 0; overflow: hidden; display: flex; align-items: flex-end; justify-content: center; }
+    .tile img, .tile svg { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+    .tile svg { padding: 25%; box-sizing: border-box; color: var(--secondary-text-color); }
     .tile span { position: relative; width: 100%; padding: 8px; background: rgba(0,0,0,.45); color: #fff; text-align: left; }
   `);
   customElements.define("resident-scenes-card", ResidentScenesCard);

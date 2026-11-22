@@ -11,7 +11,7 @@ from homeassistant.helpers import entity_registry as er, issue_registry as ir
 from homeassistant.helpers.debounce import Debouncer
 
 from .const import DOMAIN, MUSIC_PLATFORMS
-from .model import music_favorites
+from .model import entries, music_favorites
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -24,7 +24,7 @@ def broken_steps(hass: HomeAssistant, store, scene: dict) -> list[str]:
     ent_reg = er.async_get(hass)
     favorites = music_favorites(hass)
     broken = []
-    for step in scene["steps"]:
+    for step in entries(scene["sequence"]):
         if "scene_id" in step:
             if step["scene_id"] not in store.scenes:
                 broken.append(step["name"])

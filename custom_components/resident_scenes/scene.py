@@ -14,6 +14,7 @@ from homeassistant.helpers.event import async_track_time_interval
 
 from . import ResidentScenesConfigEntry
 from .const import DOMAIN, SIGNAL_CHANGED
+from .model import entries
 from .store import SceneStore
 
 PARALLEL_UPDATES = 0
@@ -84,7 +85,7 @@ class ResidentScene(Scene):
             "kind": scene["kind"],
             "content_released": scene["content_released"],
             "area_id": scene["area_id"],
-            "step_count": len(scene["steps"]),
+            "step_count": len(list(entries(scene["sequence"]))),
             "changed_at": scene["changed_at"],
         }
 
@@ -92,6 +93,11 @@ class ResidentScene(Scene):
         """Assign the scene to its area once registered."""
         await super().async_added_to_hass()
         self._sync_area()
+        scene = self._scene
+        if not scene["entity_named"] and "auto_entity_id" not in scene:
+            # the id generated from "Neue Szene N"; the first rename replaces it unless changed by hand (spec 4.3)
+            scene["auto_entity_id"] = self.entity_id
+            self.store.async_save_later()
 
     @callback
     def async_entity_id_changed(self, old_entity_id: str) -> None:

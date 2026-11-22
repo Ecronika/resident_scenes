@@ -1,4 +1,4 @@
-"""Tests for Resident Scenes: rights, saving, slots, activation, images."""
+"""Tests for Resident Scenes: rights, editing, slots, activation, images."""
 
 from __future__ import annotations
 
@@ -25,27 +25,9 @@ from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
 from homeassistant.helpers import entity_registry as er
 from homeassistant.setup import async_setup_component
-from tests.conftest import run_scene
+from tests.conftest import direct, eid, flat, make, run_scene, save, ws as _ws
 
 ROOT = Path(__file__).parent.parent / "custom_components" / DOMAIN
-
-
-async def _ws(hass, hass_ws_client, token):
-    client = await hass_ws_client(hass, token)
-    counter = iter(range(1, 1000))
-
-    async def call(**msg):
-        msg_id = next(counter)
-        await client.send_json({"id": msg_id, **msg})
-        while True:  # subscription events may arrive in between
-            reply = await client.receive_json()
-            if reply["type"] == "event":
-                call.events.append(reply)
-            elif reply["id"] == msg_id:
-                return reply
-
-    call.events = []
-    return call
 
 
 def test_versions_match() -> None:
@@ -107,8 +89,8 @@ async def test_create_capture_and_activate(
     }  # no lock, no unlabelled light, no other area
     assert {"id": "FV:2/1", "name": "Sport"} in res["result"]["favorites"]
 
-    res = await call(
-        type=f"{DOMAIN}/save",
+    scene_id = await save(
+        call,
         name="Evening",
         area_id="kitchen",
         steps=[
@@ -117,25 +99,24 @@ async def test_create_capture_and_activate(
             {"entity_id": "media_player.sonos_kitchen", "mode": "capture"},
         ],
     )
-    assert res["success"], res
-    scene_id = res["result"]["scene_id"]
     await hass.async_block_till_done()
 
     ent_reg = er.async_get(hass)
-    entity_id = ent_reg.async_get_entity_id("scene", DOMAIN, scene_id)
-    assert entity_id == "scene.evening"
+    entity_id = eid(hass, scene_id)
+    assert entity_id == "scene.evening"  # follows the first rename of "New 1"
     assert ent_reg.async_get(entity_id).area_id == "kitchen"
     assert hass.states.get(entity_id).attributes["step_count"] == 3
-    assert changes[0].data["action"] == "created"
+    assert [c.data["action"] for c in changes] == ["created"]  # the creating edit logs once
     assert changes[0].context.user_id is not None
 
-    stored = setup.runtime_data.scenes[scene_id]["steps"]
+    stored = flat(setup.runtime_data.scenes[scene_id])
     assert stored[0] == {
         "entity_id": "light.kitchen",
         "state": "on",
         "attributes": {"brightness": 128, "color_mode": "brightness"},
     }
     assert stored[2]["music"] == "favorite" and stored[2]["favorite_id"] == "FV:2/1"
+    assert [s["domain"] for s in setup.runtime_data.scenes[scene_id]["sequence"]] == ["light", "cover", "media_player"]
 
     # change the room, then run the scene
     hass.states.async_set("light.kitchen", "off", {})
@@ -150,59 +131,57 @@ async def test_create_capture_and_activate(
     assert play[0].data["media_content_id"] == "FV:2/1"
     assert play[0].data["media_content_type"] == "favorite_item_id"
 
-    # rename keeps the entity id
-    res = await call(
-        type=f"{DOMAIN}/save",
-        scene_id=scene_id,
-        version=1,
-        name="Dinner",
-        area_id="kitchen",
-        steps=[{"entity_id": "light.kitchen", "mode": "keep"}],
-    )
+    # a later rename keeps the entity id
+    res = await call(type=f"{DOMAIN}/update", scene_id=scene_id, edit="e2", name="Dinner")
     assert res["success"], res
     await hass.async_block_till_done()
+    assert eid(hass, scene_id) == entity_id
     assert hass.states.get(entity_id).name == "Dinner"
+    assert changes[-1].data["action"] == "changed"
 
 
 async def test_validation(
     hass: HomeAssistant, setup: MockConfigEntry, hass_ws_client, resident_token
 ) -> None:
-    """Unreleased devices, duplicate names, stale versions and unknown favorites are rejected."""
+    """Unreleased devices, wrong modes, duplicate names, missing steps and unknown favorites are rejected."""
     call = await _ws(hass, hass_ws_client, resident_token)
 
-    async def save(**kw):
-        return await call(type=f"{DOMAIN}/save", **{"name": "A", "area_id": "kitchen", "steps": [], **kw})
+    async def bad(**kw):
+        return await make(call, **{"name": "A", "area_id": "kitchen", **kw})
 
     fav_step = {"entity_id": "media_player.sonos_kitchen", "mode": "music", "music": "favorite", "volume": 0.5}
     for steps, code in (
         ([{"entity_id": "light.unreleased", "mode": "capture"}], "entity_not_allowed"),
-        ([{"entity_id": "lock.door", "mode": "capture"}], "entity_not_allowed"),
-        ([{"entity_id": "light.kitchen", "mode": "keep"}], "invalid_step"),
+        ([{"entity_id": "lock.door", "mode": "capture"}], "invalid_format"),  # no step domain "lock"
         ([{"entity_id": "light.kitchen", "mode": "music"}], "invalid_step"),
         ([{"entity_id": "media_player.kitchen", "mode": "music", "music": "on"}], "invalid_step"),
-        ([{"entity_id": "light.kitchen", "mode": "capture"}] * 2, "duplicate_entity"),
         ([{**fav_step, "favorite_id": "x"}], "unknown_favorite"),
     ):
-        res = await save(steps=steps)
-        assert res["error"]["code"] == code
+        res = await bad(steps=steps)
+        assert res["error"]["code"] == code, steps
 
-    assert (await save(name="   "))["error"]["code"] == "invalid_name"
-    assert (await save(area_id="nowhere"))["error"]["code"] == "invalid_area"
-    assert (await save(image="../secret.jpg"))["error"]["code"] == "invalid_image"
-    assert (await save(scene_id="nope", version=1))["error"]["code"] == "not_found"
-    assert (await save(copy_from="nope"))["error"]["code"] == "not_found"
-    first = await save(steps=[{"entity_id": "media_player.kitchen", "mode": "music", "music": "on", "volume": 0.2}])
-    assert first["success"]
-    assert (await save(name="a"))["error"]["code"] == "name_exists"
-    assert (await save(name="A", area_id=None))["success"]  # same name in the house is fine
+    assert (await bad(name="   "))["error"]["code"] == "invalid_name"
+    assert (await bad(area_id="nowhere"))["error"]["code"] == "invalid_area"
+    assert (await bad(image="../secret.jpg"))["error"]["code"] == "invalid_image"
+    assert (await call(type=f"{DOMAIN}/update", scene_id="nope", edit="x", name="B"))["error"]["code"] == "not_found"
+    sid = await save(call, name="A", area_id="kitchen",
+                     steps=[{"entity_id": "media_player.kitchen", "mode": "music", "music": "on", "volume": 0.2}])
+    assert (await bad(name="a"))["error"]["code"] == "name_exists"
+    assert (await bad(name="A", area_id=None))["success"]  # same name in the house is fine
+    other = await save(call, name="B", area_id="kitchen")
+    res = await call(type=f"{DOMAIN}/update", scene_id=other, edit="x", name="a ")
+    assert res["error"]["code"] == "name_exists"
+    assert (await call(type=f"{DOMAIN}/update", scene_id=other, edit="x", name=""))["error"]["code"] == "invalid_name"
 
-    scene_id = first["result"]["scene_id"]
-    keep = [{"entity_id": "media_player.kitchen", "mode": "keep"}]
-    ok = await save(scene_id=scene_id, version=1, name="B", steps=keep)
-    assert ok["success"]
-    assert (await save(scene_id=scene_id, version=1, name="C"))["error"]["code"] == "version_conflict"
-    copy = await save(name="B (copy)", copy_from=scene_id, steps=keep)
-    assert copy["success"]
+    # the same entity twice in one step: the second input replaces the entry
+    step_id = setup.runtime_data.scenes[sid]["sequence"][0]["id"]
+    off = {"type": f"{DOMAIN}/set_entry", "scene_id": sid, "edit": "e1", "step_id": step_id,
+           "entity_id": "media_player.kitchen", "mode": "off"}
+    assert (await call(**off))["success"]
+    assert flat(setup.runtime_data.scenes[sid]) == [{"entity_id": "media_player.kitchen", "music": "off"}]
+    # an input on a step another editor removed: the card reloads
+    assert (await call(**{**off, "step_id": "deadbeef"}))["error"]["code"] == "step_missing"
+    assert (await call(**{**off, "entity_id": "light.kitchen"}))["error"]["code"] == "entity_not_allowed"
 
 
 async def test_limits_and_unavailable(
@@ -213,13 +192,16 @@ async def test_limits_and_unavailable(
     call = await _ws(hass, hass_ws_client, resident_token)
     hass.states.async_set("light.kitchen", "unavailable")
     step = {"entity_id": "light.kitchen", "mode": "capture"}
-    res = await call(type=f"{DOMAIN}/save", name="X", area_id="kitchen", steps=[step])
+    res = await make(call, name="X", area_id="kitchen", steps=[step])
     assert res["error"]["code"] == "entity_unavailable"
     hall = [{"entity_id": "light.hall", "mode": "off"}, {"entity_id": "cover.kitchen", "mode": "off"}]
-    assert (await call(type=f"{DOMAIN}/save", name="X", steps=hall))["error"]["code"] == "too_many_steps"
-    assert (await call(type=f"{DOMAIN}/save", name="X", area_id="kitchen", steps=[]))["success"]
-    res = await call(type=f"{DOMAIN}/save", name="Y", area_id="kitchen", steps=[])
-    assert res["error"]["code"] == "limit_reached"
+    assert (await make(call, name="X", steps=hall))["error"]["code"] == "too_many_steps"
+    sid = await save(call, name="X", area_id="kitchen")
+    assert (await make(call, name="Y", area_id="kitchen"))["error"]["code"] == "limit_reached"
+    base = {"scene_id": sid, "edit": "e"}
+    assert (await call(type=f"{DOMAIN}/add_step", **base, step_type="delay"))["success"]
+    res = await call(type=f"{DOMAIN}/add_step", **base, step_type="delay")
+    assert res["error"]["code"] == "too_many_steps"  # steps count too, not only entries
 
 
 async def test_rights(
@@ -231,6 +213,7 @@ async def test_rights(
 ) -> None:
     """Excluded accounts and panels may run but not change; a panel can be released."""
     call = await _ws(hass, hass_ws_client, resident_token)
+    sid = await save(direct(setup.runtime_data), name="Any")
     uid = hass_read_only_user.id
     for options, allowed in (
         ({}, True),
@@ -242,7 +225,7 @@ async def test_rights(
         await hass.async_block_till_done()
         listing = await call(type=f"{DOMAIN}/list", scope="_house")
         assert listing["result"]["can_edit"] is allowed
-        res = await call(type=f"{DOMAIN}/save", name=f"S{len(options)}{allowed}", steps=[])
+        res = await make(call, name=f"S{len(options)}{allowed}")
         assert res["success"] is allowed
         if not allowed:
             assert res["error"]["code"] == "unauthorized"
@@ -250,6 +233,9 @@ async def test_rights(
                 {"type": f"{DOMAIN}/devices"},
                 {"type": f"{DOMAIN}/delete", "scene_id": "x"},
                 {"type": f"{DOMAIN}/set_favorite", "scope": "_house", "slot": 0, "scene_id": None},
+                {"type": f"{DOMAIN}/duplicate", "scene_id": sid, "suffix": " (copy)", "edit": "x"},
+                {"type": f"{DOMAIN}/update", "scene_id": sid, "edit": "x", "transition": 1},
+                {"type": f"{DOMAIN}/house_off", "scene_id": sid, "edit": "x", "domain": "light"},
             ):
                 assert (await call(**msg))["error"]["code"] == "unauthorized"
 
@@ -260,9 +246,8 @@ async def test_favorites_delete_and_subscribe(
     """Slots follow the scope, deleting empties them and removes the entity; cards are notified."""
     call = await _ws(hass, hass_ws_client, resident_token)
     assert (await call(type=f"{DOMAIN}/subscribe"))["success"]
-    cook = (await call(type=f"{DOMAIN}/save", name="Cook", area_id="kitchen", steps=[]))["result"]["scene_id"]
-    away_steps = [{"entity_id": "light.hall", "mode": "off"}]
-    house = (await call(type=f"{DOMAIN}/save", name="Away", steps=away_steps))["result"]["scene_id"]
+    cook = await save(call, name="Cook", area_id="kitchen")
+    house = await save(call, name="Away", steps=[{"entity_id": "light.hall", "mode": "off"}])
     await hass.async_block_till_done()
     await call(type=f"{DOMAIN}/list", scope="_house")
     assert call.events and call.events[0]["event"] == {"changed": True}
@@ -279,25 +264,13 @@ async def test_favorites_delete_and_subscribe(
     assert (await call(type=f"{DOMAIN}/list", scope="kitchen"))["result"]["favorites"] == [None, None, cook, None]
     assert (await call(type=f"{DOMAIN}/list", scope="_house"))["result"]["favorites"][0] == house
 
-    entity_id = er.async_get(hass).async_get_entity_id("scene", DOMAIN, cook)
+    entity_id = eid(hass, cook)
     assert (await call(type=f"{DOMAIN}/delete", scene_id=cook))["success"]
     await hass.async_block_till_done()
     assert hass.states.get(entity_id) is None
     assert er.async_get(hass).async_get(entity_id) is None
     assert (await call(type=f"{DOMAIN}/list", scope="kitchen"))["result"]["favorites"] == [None] * 4
     assert (await call(type=f"{DOMAIN}/delete", scene_id=cook))["error"]["code"] == "not_found"
-
-    # moving a scene to another scope empties its slots
-    res = await call(
-        type=f"{DOMAIN}/save",
-        scene_id=house,
-        version=1,
-        name="Away",
-        area_id="kitchen",
-        steps=[{"entity_id": "light.hall", "mode": "keep"}],
-    )
-    assert res["success"]
-    assert (await call(type=f"{DOMAIN}/list", scope="_house"))["result"]["favorites"] == [None] * 4
 
 
 async def test_skipped_and_failed_steps(
@@ -306,8 +279,8 @@ async def test_skipped_and_failed_steps(
     """Unreachable devices and missing favorites are skipped and logged, the rest runs."""
     call = await _ws(hass, hass_ws_client, resident_token)
     news = {"entity_id": "media_player.sonos_kitchen", "mode": "music", "music": "favorite", "volume": 0.3}
-    res = await call(
-        type=f"{DOMAIN}/save",
+    sid = await save(
+        call,
         name="Mix",
         area_id="kitchen",
         steps=[
@@ -317,18 +290,17 @@ async def test_skipped_and_failed_steps(
         ],
     )
     await hass.async_block_till_done()
-    entity_id = er.async_get(hass).async_get_entity_id("scene", DOMAIN, res["result"]["scene_id"])
     skipped = []
     hass.bus.async_listen(EVENT_SKIPPED, skipped.append)
     hass.states.async_set("cover.kitchen", "unavailable")
     hass.states.async_set("sensor.sonos_favorites", "1", {"items": {"FV:2/1": "Sport"}})
     turn_off = async_mock_service(hass, "light", "turn_off")
-    await run_scene(hass, entity_id)
+    await run_scene(hass, eid(hass, sid))
     assert len(turn_off) == 1
     assert skipped[0].data["entities"] == ["cover.kitchen", "media_player.sonos_kitchen"]
 
 
-async def test_music_off_on_and_scene_call(hass: HomeAssistant, setup: MockConfigEntry, hass_ws_client) -> None:
+async def test_music_off_on_and_scene_call(hass: HomeAssistant, setup: MockConfigEntry) -> None:
     """Music off and on, a released foreign scene (e.g. KNX), and capture of a stopped player."""
     ent_reg = er.async_get(hass)
     knx = ent_reg.async_get_or_create("scene", "knx", "s1", suggested_object_id="knx_tv")
@@ -340,31 +312,21 @@ async def test_music_off_on_and_scene_call(hass: HomeAssistant, setup: MockConfi
     scene_call = async_mock_service(hass, "scene", "turn_on")
 
     store = setup.runtime_data
-    off = await store.async_save_scene(
-        {
-            "name": "Quiet",
-            "area_id": "kitchen",
-            "steps": [
-                {"entity_id": "media_player.kitchen", "mode": "off"},
-                {"entity_id": "scene.knx_tv", "mode": "capture"},
-            ],
-        },
-        "user",
-    )
+    call = direct(store, "user")
+    steps = [{"entity_id": "media_player.kitchen", "mode": "off"}, {"entity_id": "scene.knx_tv", "mode": "capture"}]
+    off = store.scenes[await save(call, name="Quiet", area_id="kitchen", steps=steps)]
     loud = {"entity_id": "media_player.kitchen", "mode": "music", "music": "on", "volume": 0.7}
-    on = await store.async_save_scene({"name": "Loud", "steps": [loud]}, "user")
-    await store.runner.async_apply(off, off["steps"], None)
-    await store.runner.async_apply(on, on["steps"], None)
+    on = store.scenes[await save(call, name="Loud", steps=[loud])]
+    await store.runner.async_apply(off, flat(off), None)
+    await store.runner.async_apply(on, flat(on), None)
     assert len(stop) == 1 and len(media_play) == 1
     assert volume[0].data["volume_level"] == 0.7
     assert scene_call[0].data["entity_id"] == "scene.knx_tv"
 
     hass.states.async_set("media_player.kitchen", "paused", {"volume_level": 0.4})
-    hass.states.async_set("light.kitchen", "unknown")
-    captured = await store.async_save_scene(
-        {"name": "Cap", "steps": [{"entity_id": "media_player.kitchen", "mode": "capture"}]}, "user"
-    )
-    assert captured["steps"] == [{"entity_id": "media_player.kitchen", "music": "off"}]
+    cap = [{"entity_id": "media_player.kitchen", "mode": "capture"}]
+    captured = store.scenes[await save(call, name="Cap", steps=cap)]
+    assert flat(captured) == [{"entity_id": "media_player.kitchen", "music": "off"}]
 
 
 async def test_images(
@@ -401,9 +363,9 @@ async def _check_images(hass, hass_client, hass_client_no_auth, hass_ws_client, 
     assert [i["name"] for i in listing["images"]] == ["kitchen.jpg", "sofa.png"]
     assert "authSig=" in listing["images"][0]["url"]
 
-    assert (await call(type=f"{DOMAIN}/save", name="Pic", area_id="kitchen", image="sofa.png", steps=[]))["success"]
-    assert (await call(type=f"{DOMAIN}/save", name="Default", area_id="kitchen", steps=[]))["success"]
-    assert (await call(type=f"{DOMAIN}/save", name="Plain", steps=[]))["success"]
+    await save(call, name="Pic", area_id="kitchen", image="sofa.png")
+    await save(call, name="Default", area_id="kitchen")
+    await save(call, name="Plain")
     await hass.async_block_till_done()
     picture = hass.states.get("scene.default").attributes["entity_picture"]
     assert picture.startswith("/api/resident_scenes/image/kitchen.jpg?authSig=")
@@ -464,11 +426,11 @@ async def test_not_loaded(hass: HomeAssistant, setup: MockConfigEntry, hass_ws_c
 async def test_diagnostics_and_unload(hass: HomeAssistant, setup: MockConfigEntry) -> None:
     """Diagnostics contain no user ids; unloading keeps the data."""
     hass.config_entries.async_update_entry(setup, options={CONF_USERS_WITHOUT_EDIT: ["secret-id"]})
-    await setup.runtime_data.async_save_scene({"name": "D", "steps": []}, "user")
+    await save(direct(setup.runtime_data), name="D", steps=[{"entity_id": "light.hall", "mode": "off"}])
     diag = await async_get_config_entry_diagnostics(hass, setup)
     assert diag["options"][CONF_USERS_WITHOUT_EDIT] == 1
     assert "secret-id" not in json.dumps(diag)
-    assert diag["scenes"] == 1 and diag["house_scenes"] == 1
+    assert diag["scenes"] == 1 and diag["house_scenes"] == 1 and diag["steps"] == 1
     assert await hass.config_entries.async_unload(setup.entry_id)
     assert await hass.config_entries.async_setup(setup.entry_id)
     await hass.async_block_till_done()

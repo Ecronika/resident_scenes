@@ -3,10 +3,10 @@
 from typing import Final
 
 DOMAIN: Final = "resident_scenes"
-VERSION: Final = "0.2.2"  # keep in sync with manifest.json and the card (checked by tests)
+VERSION: Final = "0.3.0"  # keep in sync with manifest.json and the card (checked by tests)
 
 STORAGE_KEY: Final = f"{DOMAIN}.data"
-STORAGE_VERSION: Final = 2
+STORAGE_VERSION: Final = 3
 UPLOAD_FOLDER: Final = f"{DOMAIN}_images"  # inside .storage, so part of every backup
 
 SIGNAL_CHANGED: Final = f"{DOMAIN}_changed"

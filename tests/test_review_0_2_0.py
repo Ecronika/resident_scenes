@@ -33,10 +33,8 @@ from homeassistant.helpers import (
     label_registry as lr,
 )
 from homeassistant.util import dt as dt_util
-from tests.conftest import run_scene
-from tests.test_init import _ws
+from tests.conftest import direct, eid as _eid, flat, make, run_scene, save as _save, ws as _ws
 
-SAVE = f"{DOMAIN}/save"
 LIGHT_SET = {"entity_id": "light.kitchen", "mode": "set", "values": {"brightness": 10}}
 SETTINGS = {
     "label": "resident_scenes",
@@ -51,16 +49,6 @@ SETTINGS = {
     "image_count": 200,
     "image_dir": "resident_scenes",
 }
-
-
-def _eid(hass, scene_id):
-    return er.async_get(hass).async_get_entity_id("scene", DOMAIN, scene_id)
-
-
-async def _save(call, **payload):
-    res = await call(type=SAVE, **payload)
-    assert res["success"], res
-    return res["result"]["scene_id"]
 
 
 def _png(size=(64, 48), mode="RGB") -> bytes:
@@ -142,7 +130,7 @@ async def test_n5_fixed_label_name_in_use(hass, setup):
 
 
 async def test_large_scene_through_the_script_helper(hass, setup, hass_ws_client, resident_token):
-    """E2 / acceptance 'Große Szene': 60 light circuits in 30 rooms, every step is handed on."""
+    """E2 / acceptance 'GroÃŸe Szene': 60 light circuits in 30 rooms, every step is handed on."""
     ent_reg = er.async_get(hass)
     areas = ar.async_get(hass)
     steps = []
@@ -173,10 +161,10 @@ async def test_s1_capture_fails_when_a_device_was_moved(hass, setup, hass_ws_cli
     er.async_get(hass).async_update_entity("cover.kitchen", area_id=bath.id)  # the installer moves the blind
     hass.states.async_set("light.kitchen", "on", {"brightness": 33, "color_mode": "brightness"})
     store = setup.runtime_data
-    blind = store.scenes[sid]["steps"][1]
+    blind = flat(store.scenes[sid])[1]
     await hass.services.async_call(DOMAIN, "capture", {"entity_id": _eid(hass, sid)}, blocking=True)
-    assert store.scenes[sid]["steps"][0]["attributes"]["brightness"] == 33  # FIXED: the light is taken over
-    assert store.scenes[sid]["steps"][1] == blind  # FIXED: the moved blind keeps its value
+    assert flat(store.scenes[sid])[0]["attributes"]["brightness"] == 33  # FIXED: the light is taken over
+    assert flat(store.scenes[sid])[1] == blind  # FIXED: the moved blind keeps its value
 
 
 async def test_s1_capture_fails_when_a_called_scene_is_gone(hass, setup, hass_ws_client, resident_token):
@@ -187,7 +175,8 @@ async def test_s1_capture_fails_when_a_called_scene_is_gone(hass, setup, hass_ws
     assert (await call(type=f"{DOMAIN}/delete", scene_id=room))["success"]
     await hass.async_block_till_done()
     await hass.services.async_call(DOMAIN, "capture", {"entity_id": _eid(hass, house)}, blocking=True)
-    assert setup.runtime_data.scenes[house]["steps"][0] == {"scene_id": room, "name": "Cook"}  # FIXED: stays
+    called = flat(setup.runtime_data.scenes[house])[0]
+    assert (called["scene_id"], called["name"]) == (room, "Cook")  # FIXED: stays
 
 
 async def test_s2_house_scene_stuck_after_its_room_was_deleted(hass, setup, hass_ws_client, resident_token):
@@ -201,75 +190,30 @@ async def test_s2_house_scene_stuck_after_its_room_was_deleted(hass, setup, hass
     store = setup.runtime_data
     assert store.scenes[room]["area_id"] is None  # now a house scene
     detail = (await call(type=f"{DOMAIN}/scene", scene_id=house))["result"]
-    assert detail["steps"][0]["issue"] == "no_room_scene"  # FIXED: marked, the card offers "Remove"
+    assert detail["sequence"][0]["issue"] == "no_room_scene"  # FIXED: marked, the card offers "Remove"
     devices = (await call(type=f"{DOMAIN}/devices"))["result"]
     assert devices["room_scenes"] == []  # ... and no select shows it
-    unchanged = [{"mode": "scene", "scene_id": room}, {"entity_id": "light.hall", "mode": "keep"}]
-    res = await call(type=SAVE, scene_id=house, version=detail["version"], name="Home", steps=unchanged)
-    assert res["success"], res  # FIXED: the unchanged scene saves
-    res = await call(type=SAVE, name="Other", steps=[{"mode": "scene", "scene_id": room}])
+    res = await call(type=f"{DOMAIN}/update", scene_id=house, edit="x", transition=1)
+    assert res["success"], res  # FIXED: the scene stays editable
+    res = await make(call, name="Other", steps=[{"mode": "scene", "scene_id": room}])
     assert res["error"] == {"code": "invalid_scene_call", "message": "invalid_scene_call: Cook"}  # FIXED: name
     light = async_mock_service(hass, "light", "turn_on")
     await run_scene(hass, _eid(hass, house))
     assert any(c.data.get("brightness") == 10 for c in light)  # running still works
 
 
-async def test_s3_preview_snapshot_outlives_the_editor(hass, setup, hass_ws_client, resident_token):
-    """Spec 5.4: cancel restores the state from before THIS edit. The snapshot is kept per account, forever."""
-    async_mock_service(hass, "light", "turn_on")
-    off = async_mock_service(hass, "light", "turn_off")
-    first = await _ws(hass, hass_ws_client, resident_token)
-    assert (await first(type=f"{DOMAIN}/preview", step=LIGHT_SET))["success"]  # light was on at 128
-    # the panel reloads or the dashboard is left: no preview_end ever arrives
-    hass.states.async_set("light.kitchen", "off")  # hours later somebody switches the light off
-    later = await _ws(hass, hass_ws_client, resident_token)  # same account, new editor
-    assert (await later(type=f"{DOMAIN}/preview", step=LIGHT_SET))["success"]
-    hass.states.async_set("light.kitchen", "on", {"brightness": 10, "color_mode": "brightness"})
-    assert (await later(type=f"{DOMAIN}/preview_end", restore=True))["success"]  # cancel
-    assert off  # FIXED: back to the state before THIS edit, the light goes off again
-
-
-async def test_s3_two_panels_of_one_account_share_the_snapshot(hass, setup, hass_ws_client, resident_token):
-    on = async_mock_service(hass, "light", "turn_on")
-    for service in ("set_cover_position", "set_cover_tilt_position"):
-        async_mock_service(hass, "cover", service)
-    living = await _ws(hass, hass_ws_client, resident_token)
-    kitchen = await _ws(hass, hass_ws_client, resident_token)  # second panel, same account
-    assert (await living(type=f"{DOMAIN}/preview", step=LIGHT_SET))["success"]
-    blind = {"entity_id": "cover.kitchen", "mode": "set", "values": {"position": 20}}
-    assert (await kitchen(type=f"{DOMAIN}/preview", step=blind))["success"]
-    assert (await kitchen(type=f"{DOMAIN}/preview_end", restore=False))["success"]  # saved on the second panel
-    hass.states.async_set("light.kitchen", "on", {"brightness": 10, "color_mode": "brightness"})
-    calls = len(on)
-    assert (await living(type=f"{DOMAIN}/preview_end", restore=True))["success"]  # cancel on the first panel
-    assert len(on) == calls + 1  # FIXED: each panel restores its own devices
-    assert on[-1].data["brightness"] == 128
-
-
-async def test_s3_closed_connection_counts_as_cancel(hass, setup, hass_ws_client, resident_token):
-    on = async_mock_service(hass, "light", "turn_on")
-    client = await hass_ws_client(hass, resident_token)
-    await client.send_json({"id": 1, "type": f"{DOMAIN}/preview", "step": LIGHT_SET})
-    assert (await client.receive_json())["success"]
-    hass.states.async_set("light.kitchen", "on", {"brightness": 10, "color_mode": "brightness"})
-    await client.close()  # panel reloaded, app closed
-    await hass.async_block_till_done()
-    assert on[-1].data["brightness"] == 128
-    assert not setup.runtime_data.previews
-
-
 async def test_s4_resident_takes_back_a_change_of_the_installer(hass, setup, hass_ws_client, resident_token):
     """Spec 2: a resident cannot rename an installer scene. Undo does it for him."""
     store = setup.runtime_data
-    scene = {"name": "Cook", "area_id": "kitchen", "kind": "installer", "content_released": True, "steps": [LIGHT_SET]}
-    sid = (await store.async_save_scene(scene, None, is_admin=True))["id"]
-    renamed = {**scene, "scene_id": sid, "version": 1, "name": "Kochen", "steps": [{**LIGHT_SET, "mode": "keep"}]}
-    await store.async_save_scene(renamed, None, is_admin=True)  # the installer renames it
+    installer = direct(store)
+    sid = await _save(installer, name="Cook", area_id="kitchen", kind="installer", content_released=True,
+                      steps=[LIGHT_SET])
+    assert (await installer(type=f"{DOMAIN}/update", scene_id=sid, edit="e2", name="Kochen"))["success"]  # renamed
     call = await _ws(hass, hass_ws_client, resident_token)
-    keep = [{**LIGHT_SET, "mode": "keep"}]
-    back = {"scene_id": sid, "version": 2, "name": "Cook", "area_id": "kitchen", "steps": keep}
-    assert (await call(type=SAVE, **back))["error"]["code"] == "protected"  # renaming is refused, as specified
-    assert (await call(type=f"{DOMAIN}/undo", scene_id=sid, version=2))["success"]
+    back = {"type": f"{DOMAIN}/update", "scene_id": sid, "edit": "e3", "name": "Cook"}
+    assert (await call(**back))["error"]["code"] == "protected"  # renaming is refused, as specified
+    version = store.scenes[sid]["version"]
+    assert (await call(type=f"{DOMAIN}/undo", scene_id=sid, version=version))["success"]
     assert store.scenes[sid]["name"] == "Kochen"  # FIXED: only the content is taken back
 
 
@@ -357,10 +301,10 @@ async def test_s7_capture_with_other_targets(hass, setup, hass_ws_client, reside
     store = setup.runtime_data
     hass.states.async_set("light.kitchen", "on", {"brightness": 77, "color_mode": "brightness"})
     await hass.services.async_call(DOMAIN, "capture", {"area_id": "kitchen"}, blocking=True)  # FIXED
-    assert next(iter(store.scenes.values()))["steps"][0]["attributes"]["brightness"] == 77
+    assert flat(next(iter(store.scenes.values())))[0]["attributes"]["brightness"] == 77
     hass.states.async_set("light.kitchen", "on", {"brightness": 66, "color_mode": "brightness"})
     await hass.services.async_call(DOMAIN, "capture", {"entity_id": "all"}, blocking=True)  # FIXED
-    assert next(iter(store.scenes.values()))["steps"][0]["attributes"]["brightness"] == 66
+    assert flat(next(iter(store.scenes.values())))[0]["attributes"]["brightness"] == 66
 
 
 async def test_s8_rights_ranks(hass, setup, hass_ws_client, resident_token, hass_read_only_user, hass_access_token):
@@ -417,8 +361,7 @@ async def test_s10_change_during_a_delay_drops_the_rest(hass, setup, hass_ws_cli
     hass.bus.async_listen(EVENT_SKIPPED, skipped.append)
     await hass.services.async_call("scene", "turn_on", {"entity_id": _eid(hass, sid)}, blocking=True)
     await hass.async_block_till_done()
-    keep = [{"entity_id": "light.kitchen", "mode": "keep"}, {"entity_id": "cover.kitchen", "mode": "keep", "delay": 5}]
-    await _save(call, scene_id=sid, version=1, name="Later", area_id="kitchen", steps=keep)  # only renamed
+    assert (await call(type=f"{DOMAIN}/update", scene_id=sid, edit="x", name="Later"))["success"]  # only renamed
     async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=10))
     await hass.async_block_till_done(wait_background_tasks=True)
     assert cover  # FIXED: the run finishes with the steps it started with

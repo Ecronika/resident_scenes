@@ -111,6 +111,7 @@ async def _async_options_updated(hass: HomeAssistant, entry: ResidentScenesConfi
 
 async def async_unload_entry(hass: HomeAssistant, entry: ResidentScenesConfigEntry) -> bool:
     """Unload the scenes; stored data stays."""
+    await entry.runtime_data.async_write()  # the next setup reads the file, not this store's pending data
     return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
 
 

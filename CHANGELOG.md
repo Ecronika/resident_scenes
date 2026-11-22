@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.3.0
+
+Stage 3: a new scene editor (functional spec draft 0.8).
+
+- Every input is saved at once and is seen on every card; "Save" and "Cancel" are gone, "Done" and the back arrow
+  end editing. Inputs reach the disk within 10 seconds, at once on shutdown.
+- "New scene" creates "New scene 1" at once. The entity id follows the first rename once, then stays; a hand-changed
+  entity id is left alone.
+- A scene is a sequence of steps: a trade with its ticked devices, a call of a room scene, or a delay. The same trade
+  and the same device may appear in several steps; inside one batch the lower entry wins. The delay per device is
+  gone.
+- Storage format 3: existing scenes and templates of 0.2 are converted without changing how they run.
+- Live adjustments per step for lights, shading, switches and fans, off on every opening; switching on takes over all
+  devices of the step. Nothing is restored when leaving. The preview with restore is gone.
+- Undo and logbook per edit instead of per save; the edit that created a scene has nothing to undo.
+- Two people editing the same scene: inputs on different entries both stay, the open editor takes over changes of
+  others at once, an input on a removed step is refused and the card reloads.
+- Card: list with a "Favorites" group and placeholder images, scene view with the uncropped image, short sequence,
+  feedback of the play button; favorite slot dialog naming the scene on each slot and asking before replacing one;
+  own switches, selects and image picker, sliders over the full row with their value, 44 px targets, usable at
+  320 px; sorting by dragging only (auto-scroll, arrow keys on the handle); delay with minus, plus and direct input;
+  delete dialog over the card; full width in the "Sections" view (findings V1 to V13 of the test installation).
+- Fixed: two `scene.turn_on` calls of one automation run are two triggers, so a room scene called by both runs for
+  each (U1); concurrent uploads can no longer pass the image count (U2).
+- Removed WebSocket commands `save`, `preview` and `preview_end`; new input commands (see `websocket.py`).
+
 ## 0.2.2
 
 Fixes from the review of 0.2.1 (T1 to T5).

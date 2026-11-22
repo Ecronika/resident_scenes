@@ -1,80 +1,14 @@
-// Review of the card in version 0.2.0, run in jsdom against the built file; turned around after the fixes in 0.2.1.
+// Review checks of the card from version 0.2.0, carried over to the step editor of 0.3.0.
 // Run: npm ci && npm run build && node tests/card_probe_0_2_0.cjs
-// Lines marked FIXED were FINDING lines of the review, OK lines confirmed earlier fixes.
+// Dropped with 0.3.0 (behaviour removed by the design): the per-device mode select (keep/capture/off/set),
+// the end of the live preview on cancel or removal (S3), the "save" of five inputs (B3 now has no save),
+// the error of a save naming a scene (S2, inputs are checked one by one now), arrow buttons of the order.
 const assert = require("node:assert");
-const fs = require("node:fs");
-const path = require("node:path");
-const { JSDOM } = require("jsdom");
+const { w, src, tick, setValue, world, make, types, last, q, click } = require("./world.cjs");
 
-const repo = path.join(__dirname, "..");
-const file = process.argv[2] ?? path.join(repo, "custom_components", "resident_scenes", "frontend", "resident-scenes-card.js");
-const sourceFile = process.argv[3] ?? path.join(repo, "src", "resident-scenes-card.js");
-const source = fs.readFileSync(file, "utf8");
-const dom = new JSDOM("<!doctype html><body></body>", { runScripts: "outside-only", pretendToBeVisual: true });
-const w = dom.window;
-w.ResizeObserver = class { observe() {} disconnect() {} };
-w.eval(source);
-
-const VERSION = /VERSION = "([^"]+)"/.exec(source)[1];
-const tick = (ms = 20) => new Promise((resolve) => setTimeout(resolve, ms));
-const fire = (node, type) => node.dispatchEvent(new w.Event(type, { bubbles: true }));
-const setValue = (node, value, type = "change") => { node.value = value; fire(node, type); };
-
-function world() {
-  const devices = [];
-  for (let r = 0; r < 30; r++) {
-    for (let i = 0; i < 2; i++) {
-      devices.push({ entity_id: `light.r${r}_${i}`, name: `Light ${r}.${i}`, domain: "light", area_id: `r${r}`,
-        available: true, music_system: false, capabilities: { brightness: true, color_temp: true, color: true, min_kelvin: 2000, max_kelvin: 6500 } });
-    }
-    devices.push({ entity_id: `cover.r${r}`, name: `Cover ${r}`, domain: "cover", area_id: `r${r}`, available: true,
-      music_system: false, capabilities: { position: true } });
-  }
-  const s = {
-    devices, calls: [], subs: 0, failList: 0, listeners: {}, scene: null, roomScenes: [],
-    data: { version: VERSION, can_edit: true, is_admin: false, manages_rights: false, name_length: 30, favorite_slots: 4,
-      max_delay: 600, max_transition: 60, limit: 30, scenes: [], favorites: [null, null, null, null], foreign_scenes: [] },
-  };
-  const states = {};
-  for (const d of devices) {
-    states[d.entity_id] = { entity_id: d.entity_id, state: d.domain === "light" ? "on" : "open",
-      attributes: d.domain === "light" ? { brightness: 128, hs_color: [30, 80], friendly_name: d.name } : { current_position: 70, friendly_name: d.name } };
-  }
-  s.hass = {
-    locale: { language: "de" }, states, entities: {}, devices: {}, areas: {},
-    connection: {
-      subscribeMessage: async (cb) => { s.subs++; s.notify = cb; return () => {}; },
-      addEventListener: (type, cb) => { s.listeners[type] = cb; },
-      removeEventListener: () => {},
-    },
-    callService: () => {},
-    callWS: async (msg) => {
-      s.calls.push(msg);
-      if (msg.type.endsWith("/list")) {
-        if (s.failList > 0) { s.failList--; throw { code: "unknown_command", message: "Unknown command." }; }
-        return s.data;
-      }
-      if (msg.type.endsWith("/scene")) return s.scene;
-      if (msg.type.endsWith("/devices")) {
-        const ents = msg.area_id ? devices.filter((d) => d.area_id === msg.area_id) : devices;
-        return { entities: ents.map((d) => ({ ...d })), favorites: [], images: [], room_scenes: s.roomScenes };
-      }
-      if (msg.type.endsWith("/save") && s.saveError) throw s.saveError;
-      return {};
-    },
-  };
-  return s;
-}
-
-async function make(s, config) {
-  const card = w.document.createElement("resident-scenes-card");
-  card.setConfig(config);
-  w.document.body.appendChild(card);
-  card.hass = s.hass;
-  await tick();
-  return card;
-}
-const types = (s) => s.calls.map((c) => c.type.split("/")[1]);
+const scene = (sequence, extra = {}) => ({ id: "s1", name: "Abend", area_id: "r2", entity_id: "scene.abend", kind: "resident",
+  editable: true, can_undo: false, version: 3, image: null, image_url: null, transition: null, content_released: false,
+  used_in: { scenes: [], slots: [] }, sequence, ...extra });
 
 (async () => {
   // ---------- N2: Home Assistant restarts, the integration is not loaded yet ----------
@@ -83,145 +17,105 @@ const types = (s) => s.calls.map((c) => c.type.split("/")[1]);
     s.failList = 1;
     const card = await make(s, { scope: "house", view: "manage" });
     const root = card.shadowRoot;
-    assert.match(root.textContent, /Nicht aktuell/); // FIXED (S12 Nr. 1): hint also without data
+    assert.match(root.textContent, /Nicht aktuell/, "hint also without data");
     await tick(2200); // the card tries again by itself
-    assert.ok(root.querySelector('[data-action="new"]'), "OK (N2): content appears without a reload");
-    assert.strictEqual(s.subs, 1, "OK (N2): subscribed after the first success");
+    assert.ok(q(root, '[data-action="new"]'), "N2: content appears without a reload");
+    assert.strictEqual(s.subs, 1, "N2: subscribed after the first success");
     s.listeners.ready(); // connection is back after a restart
     await tick();
-    assert.strictEqual(s.subs, 2, "OK (N2): subscription renewed after a reconnect");
+    assert.strictEqual(s.subs, 2, "N2: subscription renewed after a reconnect");
     card.remove();
   }
 
-  // ---------- N3 and N8: reasons in the editor, size of the controls ----------
+  // ---------- N3 and N8: reasons in the opened step, size of the controls ----------
   {
     const s = world();
     s.data.scenes = [{ id: "s1", name: "Abend", entity_id: "scene.abend", kind: "resident", editable: true, image_url: null }];
-    s.scene = { id: "s1", name: "Abend", entity_id: "scene.abend", kind: "resident", editable: true, can_undo: false, version: 3,
-      image: null, image_url: null, transition: null, content_released: false, used_in: { scenes: [], slots: [] },
-      steps: [
-        { entity_id: "light.r2_0", state: "on", attributes: { brightness: 255 }, issue: null },
-        { entity_id: "light.gone", name: "Old lamp", state: "on", attributes: {}, issue: "missing" },
-        { entity_id: "light.r2_1", state: "on", attributes: {}, issue: "not_released" },
-        { entity_id: "light.r5_0", state: "on", attributes: {}, issue: "other_area" },
-      ] };
+    s.scene = scene([{ id: "g1", type: "group", domain: "light", area_id: "r2", entries: [
+      { entity_id: "light.r2_0", state: "on", attributes: { brightness: 255 }, issue: null },
+      { entity_id: "light.gone", name: "Old lamp", state: "on", attributes: {}, issue: "missing" },
+      { entity_id: "light.r2_1", state: "on", attributes: {}, issue: "not_released" },
+      { entity_id: "light.r5_0", state: "on", attributes: {}, issue: "other_area" },
+    ] }]);
     const card = await make(s, { scope: "area", area: "r2", view: "manage" });
     const root = card.shadowRoot;
-    root.querySelector('[data-action="select"]').click();
-    await tick();
-    root.querySelector('[data-action="edit"]').click();
-    await tick();
-    const badge = (eid) => root.querySelector(`[data-field="pick"][data-entity="${eid}"]`).closest(".row").querySelector(".badge")?.textContent;
-    assert.strictEqual(badge("light.gone"), "Gerät fehlt", "OK (N3)");
-    assert.strictEqual(badge("light.r2_1"), "Nicht freigegeben", "OK (N3)");
-    assert.strictEqual(badge("light.r5_0"), "In anderem Raum", "OK (N3)");
-    const options = (eid) => [...root.querySelector(`[data-field="choice"][data-entity="${eid}"]`).options].map((o) => o.value);
-    assert.deepStrictEqual(options("light.r5_0"), ["keep"], "OK: a moved device keeps its value and cannot be changed");
-    assert.deepStrictEqual(options("light.r2_0"), ["keep", "capture", "off", "set"]);
-    const css = [...root.querySelectorAll("style")].map((n) => n.textContent).join("") || source;
-    assert.match(css, /button, select, input\[type=number\], input:not\(\[type\]\) \{ min-height: 44px/, "OK (N8): 44 px");
-
-    // a locked device that is unticked by mistake cannot come back
-    const box = root.querySelector('[data-field="pick"][data-entity="light.r5_0"]');
-    box.checked = false; fire(box, "change"); await tick();
-    box.checked = true; fire(box, "change"); await tick();
-    assert.deepStrictEqual(options("light.r5_0"), ["keep"]); // FIXED (S12 Nr. 2): the stored step is back
-    assert.strictEqual(card._payloadSteps().find((p) => p.entity_id === "light.r5_0").mode, "keep");
+    await click(root, '[data-action="select"]');
+    await click(root, '[data-action="edit"]');
+    await click(root, '[data-action="open"][data-id="g1"]');
+    const row = (eid) => q(root, `[data-field="pick"][data-entity="${eid}"]`).closest(".row");
+    assert.strictEqual(row("light.gone").querySelector(".badge").textContent, "Gerät fehlt", "N3");
+    assert.strictEqual(row("light.r2_1").querySelector(".badge").textContent, "Nicht freigegeben", "N3");
+    assert.strictEqual(row("light.r5_0").querySelector(".badge").textContent, "In anderem Raum", "N3");
+    assert.ok(row("light.gone").textContent.includes("Old lamp"), "a missing device is named by the server");
+    assert.ok(!row("light.r5_0").querySelector(".controls"), "a flagged entry cannot be changed");
+    assert.ok(row("light.r2_0").querySelector('[data-field="brightness"]'), "V4: a ticked device shows its stored value");
+    assert.strictEqual(row("light.r2_0").querySelector("output").textContent.trim(), "100 %");
+    // a flagged entry can be removed
+    await click(root, '[data-field="pick"][data-entity="light.r5_0"]');
+    assert.strictEqual(last(s, "remove_entry").entity_id, "light.r5_0");
+    const css = w.customElements.get("resident-scenes-card").styles.cssText;
+    assert.match(css, /button, input\[type=number\], input:not\(\[type\]\) \{ min-height: 44px/, "N8: 44 px");
+    assert.match(css, /\.handle \{[^}]*min-height: 44px/);
     card.remove();
   }
 
-  // ---------- B3: "Abwesend" in five inputs, nothing switches ----------
+  // ---------- B3: "Abwesend" in four inputs, nothing switches ----------
   {
     const s = world();
     const card = await make(s, { scope: "house", view: "manage" });
     const root = card.shadowRoot;
-    root.querySelector('[data-action="new"]').click(); await tick(); // 1
-    setValue(root.querySelector('[data-field="name"]'), "Abwesend", "input"); // 2
-    root.querySelector('[data-action="trade-off"][data-domain="light"]').click(); await tick(); // 3
-    root.querySelector('[data-action="trade-off"][data-domain="cover"]').click(); await tick(); // 4
-    root.querySelector('[data-action="save"]').click(); await tick(); // 5
-    const save = s.calls.find((c) => c.type.endsWith("/save"));
-    assert.strictEqual(save.steps.length, 90, "OK (B3): 60 light circuits and 30 blinds in five inputs");
-    assert.ok(save.steps.every((p) => p.mode === "off"));
-    assert.ok(!types(s).includes("preview"), "OK: nothing switched");
+    await click(root, '[data-action="new"]'); // 1
+    setValue(q(root, '[data-field="name"]'), "Abwesend"); await tick(); // 2
+    await click(root, '[data-action="house-off"][data-domain="light"]'); // 3: 60 light circuits
+    await click(root, '[data-action="house-off"][data-domain="cover"]'); // 4: 30 blinds
+    const inputs = s.calls.filter((c) => !["list", "scene", "devices"].includes(c.type.split("/")[1]));
+    assert.deepStrictEqual(inputs.map((c) => c.type.split("/")[1]), ["create", "update", "house_off", "house_off"]);
+    assert.ok(!s.calls.some((c) => c.live), "B3: nothing switched");
     card.remove();
   }
 
-  // ---------- S3: the live preview is not ended when the card goes away ----------
+  // ---------- S2: a called scene that is no room scene any more ----------
   {
     const s = world();
-    const card = await make(s, { scope: "area", area: "r2", view: "manage" });
-    const root = card.shadowRoot;
-    root.querySelector('[data-action="new"]').click(); await tick();
-    const box = root.querySelector('[data-field="pick"][data-entity="light.r2_0"]');
-    box.checked = true; fire(box, "change"); await tick();
-    setValue(root.querySelector('[data-field="choice"][data-entity="light.r2_0"]'), "off"); await tick();
-    assert.strictEqual(types(s).filter((t) => t === "preview").length, 1, "the light is switched off for the preview");
-    card.remove(); // dashboard left, panel reloaded, browser closed
-    await tick();
-    assert.strictEqual(JSON.stringify(s.calls.at(-1)), JSON.stringify({ type: "resident_scenes/preview_end", restore: true, edit: card._editKey })); // FIXED (S3)
-  }
-  {
-    const s = world();
-    const card = await make(s, { scope: "area", area: "r2", view: "manage" });
-    const root = card.shadowRoot;
-    root.querySelector('[data-action="new"]').click(); await tick();
-    const box = root.querySelector('[data-field="pick"][data-entity="light.r2_0"]');
-    box.checked = true; fire(box, "change"); await tick();
-    setValue(root.querySelector('[data-field="choice"][data-entity="light.r2_0"]'), "off"); await tick();
-    root.querySelector('[data-action="new"]').click(); await tick(); // "Neue Szene" again while editing (two columns)
-    assert.ok(types(s).includes("preview_end")); // FIXED (S3): the first form is restored before it goes
-    assert.strictEqual(card._payloadSteps().length, 0);
-    card.remove();
-  }
-
-  // ---------- S2: a called scene that is no room scene any more (its room was deleted) ----------
-  {
-    const s = world();
-    s.data.scenes = [{ id: "h1", name: "Zuhause", entity_id: "scene.zuhause", kind: "resident", editable: true, image_url: null }];
-    s.scene = { id: "h1", name: "Zuhause", entity_id: "scene.zuhause", kind: "resident", editable: true, can_undo: false, version: 2,
-      image: null, image_url: null, transition: null, content_released: false, used_in: { scenes: [], slots: [] },
-      steps: [{ scene_id: "aaaabbbbccccddddeeeeffff00001111", name: "Kochen", issue: "no_room_scene" }] };
-    s.saveError = { code: "invalid_scene_call", message: "invalid_scene_call: Kochen" };
+    s.data.scenes = [{ id: "s1", name: "Zuhause", entity_id: "scene.zuhause", kind: "resident", editable: true, image_url: null }];
+    s.scene = scene([{ id: "c1", type: "scene", scene_id: "x", name: "Kochen", area_id: null, issue: "no_room_scene" }], { area_id: null });
     const card = await make(s, { scope: "house", view: "manage" });
     const root = card.shadowRoot;
-    root.querySelector('[data-action="select"]').click(); await tick();
-    root.querySelector('[data-action="edit"]').click(); await tick();
-    assert.strictEqual(root.querySelectorAll('[data-field="room-scene"]').length, 0);
-    assert.match(root.textContent, /Keine Raumszene mehr/); // FIXED (S2): marked
-    root.querySelector('[data-action="save"]').click(); await tick();
-    const error = root.querySelector(".error").textContent;
-    assert.strictEqual(error, "Diese Szene lässt sich nicht aufrufen. Kochen"); // FIXED (S2): the server names the scene
-    root.querySelector('[data-action="remove"]').click(); await tick(); // FIXED (S2): can be removed
-    assert.strictEqual(card._payloadSteps().length, 0);
+    await click(root, '[data-action="select"]');
+    assert.match(root.textContent, /Keine Raumszene mehr/, "S2: marked in the scene view");
+    await click(root, '[data-action="edit"]');
+    assert.match(root.textContent, /Keine Raumszene mehr/, "S2: marked in the editor");
+    assert.ok(!q(root, '[data-action="open"][data-id="c1"]'), "a scene step has nothing to open");
+    await click(root, '[data-action="remove-step"][data-id="c1"]'); // S2: can be removed
+    assert.strictEqual(last(s, "remove_step").step_id, "c1");
+    assert.match(root.textContent, /Noch keine Schritte/);
     card.remove();
   }
 
-  // ---------- direct values: colour temperature hides colour for good ----------
+  // ---------- direct values: white and colour, the controls follow the program ----------
   {
     const s = world();
+    s.data.scenes = [{ id: "s1", name: "Abend", entity_id: "scene.abend", kind: "resident", editable: true, image_url: null }];
+    s.scene = scene([{ id: "g1", type: "group", domain: "light", area_id: "r2", entries: [] }]);
     const card = await make(s, { scope: "area", area: "r2", view: "manage" });
     const root = card.shadowRoot;
-    root.querySelector('[data-action="new"]').click(); await tick();
-    const box = root.querySelector('[data-field="pick"][data-entity="light.r2_0"]');
-    box.checked = true; fire(box, "change"); await tick();
-    const choice = root.querySelector('[data-field="choice"][data-entity="light.r2_0"]');
-    setValue(choice, "set"); await tick();
-    const field = (name) => root.querySelector(`[data-field="${name}"][data-entity="light.r2_0"]`);
-    assert.ok(field("brightness") && field("light_mode") && field("hue"), "brightness, white or colour, colour");
-    assert.ok(field("saturation"), "FIXED (S12 Nr. 3): saturation can be set");
-    setValue(field("light_mode"), "white"); await tick();
-    assert.strictEqual(field("hue"), null);
-    setValue(field("color_temp_kelvin"), "3000"); await tick();
-    setValue(field("light_mode"), "colour"); await tick();
-    assert.ok(field("hue") && field("saturation"), "FIXED (S12 Nr. 3): the colour comes back");
-    assert.strictEqual(card._payloadSteps()[0].values.color_temp_kelvin, undefined, "only one of them is sent");
-    assert.deepStrictEqual(types(s).filter((t) => t === "preview").length, 4, "OK: every input is previewed in a room scene");
-
-    // a select keeps showing the user's last pick when the program changes the value
-    root.querySelector('[data-action="group-off"][data-group="light"]').click(); await tick();
-    assert.strictEqual(card._payloadSteps()[0].mode, "off");
-    assert.strictEqual(choice.value, "off"); // FIXED (S12 Nr. 4): the select follows the program
+    await click(root, '[data-action="select"]');
+    await click(root, '[data-action="edit"]');
+    await click(root, '[data-action="open"][data-id="g1"]');
+    const field = (name) => q(root, `[data-field="${name}"][data-entity="light.r2_0"]`);
+    assert.ok(field("brightness") && field("light_mode") && field("hue") && field("saturation"), "unticked shows the current state");
+    await click(root, '[data-field="light_mode"][data-entity="light.r2_0"] [data-value="white"]');
+    const msg = last(s, "set_entry");
+    assert.deepStrictEqual(JSON.parse(JSON.stringify(msg.values)), { brightness: 128, color_temp_kelvin: 2000 }, "only one of them is sent");
+    assert.strictEqual(msg.mode, "set");
+    assert.strictEqual(q(root, '[data-field="pick"][data-entity="light.r2_0"]').getAttribute("aria-checked"), "true", "an input ticks the device");
+    assert.ok(field("color_temp_kelvin") && !field("hue"), "white mode");
+    // the server sets the light off (another editor, "Alle aus"): the switch follows
+    s.scene.sequence[0].entries[0].state = "off";
+    s.notify({}); await tick();
+    assert.strictEqual(field("on").getAttribute("aria-checked"), "false", "S12 Nr. 4: controls follow the server");
+    await click(root, '[data-field="on"][data-entity="light.r2_0"]');
+    assert.strictEqual(last(s, "set_entry").mode, "set", "switching on stores a value");
     card.remove();
   }
 
@@ -230,8 +124,7 @@ const types = (s) => s.calls.map((c) => c.type.split("/")[1]);
     const s = world();
     const card = await make(s, { scope: "house", view: "manage" });
     const root = card.shadowRoot;
-    root.querySelector('[data-action="new"]').click(); await tick();
-    root.querySelector('[data-action="trade-off"][data-domain="light"]').click(); await tick();
+    await click(root, '[data-action="new"]');
     let renders = 0;
     const render = card.render.bind(card);
     card.render = () => { renders++; return render(); };
@@ -242,38 +135,48 @@ const types = (s) => s.calls.map((c) => c.type.split("/")[1]);
       await card.updateComplete;
     }
     const ms = Number(process.hrtime.bigint() - start) / 1e6;
-    assert.strictEqual(renders, 100); // NOT CHANGED (S12 Nr. 5): left out by decision, below 1 ms in jsdom
-    console.log(`house editor with 90 devices: ${renders} redraws for 100 unrelated state changes, ${(ms / 100).toFixed(1)} ms each in jsdom`);
+    assert.strictEqual(renders, 100); // left out by decision (S12 Nr. 5)
+    console.log(`house editor: ${renders} redraws for 100 unrelated state changes, ${(ms / 100).toFixed(1)} ms each in jsdom`);
     card.remove();
   }
 
-  // ---------- spec 5.7: drag a row of the sequence onto another ----------
+  // ---------- spec 5.7: drag a step onto another, auto-scroll near the edge ----------
   {
     const s = world();
+    s.data.scenes = [{ id: "s1", name: "Abend", entity_id: "scene.abend", kind: "resident", editable: true, image_url: null }];
+    s.scene = scene([
+      { id: "a", type: "group", domain: "light", area_id: "r2", entries: [] },
+      { id: "b", type: "delay", seconds: 5 },
+      { id: "c", type: "group", domain: "cover", area_id: "r2", entries: [] },
+    ]);
     const card = await make(s, { scope: "area", area: "r2", view: "manage" });
     const root = card.shadowRoot;
-    root.querySelector('[data-action="new"]').click(); await tick();
-    root.querySelector('[data-field="all"][data-group="light"]').click(); await tick();
-    root.querySelector('[data-field="all"][data-group="cover"]').click(); await tick();
-    const order = () => card._payloadSteps().map((p) => p.entity_id);
-    assert.deepStrictEqual([...order()], ["light.r2_0", "light.r2_1", "cover.r2"]);
+    await click(root, '[data-action="select"]');
+    await click(root, '[data-action="edit"]');
+    let scrolled = 0;
     root.querySelectorAll(".row.order").forEach((row, i) => {
       row.getBoundingClientRect = () => ({ top: i * 50, bottom: i * 50 + 50 });
+      row.scrollIntoView = () => scrolled++;
     });
     const handle = root.querySelectorAll('[data-action="drag"]')[0];
     const pointer = (type, y) => handle.dispatchEvent(new w.MouseEvent(type, { bubbles: true, clientY: y }));
-    pointer("pointerdown", 10); pointer("pointermove", 60); pointer("pointermove", 120); await tick();
+    pointer("pointerdown", 60); pointer("pointermove", 60); pointer("pointermove", 120); await tick();
     assert.ok(root.querySelectorAll(".row.order")[2].classList.contains("drop"), "drop target marked");
+    pointer("pointermove", 10); // near the top edge
+    assert.ok(scrolled > 0, "the list scrolls near its edge");
+    pointer("pointermove", 120);
     pointer("pointerup", 120); await tick();
-    assert.deepStrictEqual([...order()], ["light.r2_1", "cover.r2", "light.r2_0"], "first row moved to the end");
+    assert.deepStrictEqual({ ...last(s, "move_step") }, { type: "resident_scenes/move_step", scene_id: "s1", edit: card._edit.id, step_id: "a", index: 2 });
+    assert.deepStrictEqual(s.scene.sequence.map((x) => x.id), ["b", "c", "a"]);
     card.remove();
   }
 
-  // ---------- parts of stage 2 that are not in the card ----------
-  const src = fs.readFileSync(sourceFile, "utf8");
-  assert.ok(/pointerdown/.test(src)); // FIXED (spec 5.7): order by dragging and by arrows
-  assert.ok(!/preview_favorite|play_favorite/.test(src)); // spec 5.4: play button for a favorite struck by decision
-  assert.ok(!src.includes("getConfigElement")); // note: no visual card editor, YAML only
+  // ---------- parts that must not come back ----------
+  assert.ok(/pointerdown/.test(src), "spec 5.7: order by dragging");
+  assert.ok(!/preview|\/save|save_copy|data-action="up"/.test(src), "no preview, no save, no arrow buttons");
+  assert.ok(!/preview_favorite|play_favorite/.test(src), "spec 5.4: no play button for a favorite");
+  assert.ok(!src.includes("getConfigElement"), "no visual card editor, YAML only");
+  assert.ok(!src.includes("friendly_name"), "names come from formatEntityName or the server");
 
   console.log("card probe 0.2.0 passed");
   process.exit(0);

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from copy import deepcopy
 from datetime import timedelta
 import io
 import os
@@ -18,18 +19,21 @@ from homeassistant.core import Event, HomeAssistant, callback
 from homeassistant.helpers import area_registry as ar, entity_registry as er
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.storage import Store
-from homeassistant.util import dt as dt_util
+from homeassistant.util import dt as dt_util, slugify
 
 from .const import (
+    ALLOWED_DOMAINS,
     CONF_FAVORITE_SLOTS,
     CONF_HOUSE_SCENES,
     CONF_IMAGE_COUNT,
     CONF_IMAGE_DIR,
     CONF_IMAGE_KB,
     CONF_IMAGE_SIDE,
+    CONF_MAX_DELAY,
     CONF_NAME_LENGTH,
     CONF_SCENES_PER_AREA,
     CONF_STEPS_PER_SCENE,
+    DOMAIN,
     EVENT_CHANGED,
     HOUSE,
     IMAGE_SUFFIXES,
@@ -44,12 +48,26 @@ from .const import (
     UPLOAD_FOLDER,
     UPLOAD_PREFIX,
 )
-from .model import ValidationError, allowed_entities, build_steps, music_favorites, opt, step_issue
+from .model import (
+    ValidationError,
+    allowed_entities,
+    build_step,
+    entity_area,
+    entries,
+    group_steps,
+    music_favorites,
+    new_step_id,
+    opt,
+    step_issue,
+)
 
 SIGN_EXPIRY = timedelta(days=1)
 UPLOAD_GRACE = 3600  # an upload not yet saved in a scene is kept this long (seconds)
 MAX_PIXEL_SIDE = 4096  # refused before decoding (memory); the card uploads 640 x 480
-CONTENT = ("name", "area_id", "image", "steps", "transition")
+CONTENT = ("name", "area_id", "image", "sequence", "transition")
+SAVE_DELAY = 10  # seconds; inputs come in bursts while editing, Home Assistant writes pending data on stop
+EDITS_KEPT = 20  # edit ids remembered per scene
+LIVE_DOMAINS = frozenset({"light", "cover", "switch", "fan"})
 
 
 def valid_image_name(name: str) -> bool:
@@ -114,11 +132,17 @@ class _VersionedStore(Store[dict[str, Any]]):
     async def _async_migrate_func(
         self, old_major_version: int, old_minor_version: int, old_data: dict[str, Any]
     ) -> dict[str, Any]:
-        """Version 1 (stage 1) to 2: protection, transition and the previous state."""
-        for scene in old_data.get("scenes", {}).values():
+        """Version 1 to 2: protection, transition, previous state. 2 to 3: steps become a sequence."""
+        scenes = old_data.get("scenes", {})
+        for scene in scenes.values():
             scene.setdefault("content_released", False)
             scene.setdefault("transition", None)
             scene.setdefault("previous", None)
+            if old_major_version < 3:
+                for content in (scene, scene["previous"]):
+                    if content and "steps" in content:
+                        content["sequence"] = group_steps(self.hass, content["area_id"], content.pop("steps"), scenes)
+                scene["entity_named"] = True
         return old_data
 
 
@@ -136,7 +160,7 @@ class SceneStore:
         self._signed: dict[str, tuple[str, float]] = {}
         self.runner: Any = None  # SceneRunner, set up after loading
         self._upload_lock = asyncio.Lock()  # one image decoded at a time, about 130 MB each (review T5)
-        self.previews: dict[Any, dict[str, Any]] = {}  # live preview per connection and edit: states before editing
+        self._edits: dict[str, list[str]] = {}  # scene id -> edit ids already begun (in memory only)
 
     async def async_load(self) -> None:
         """Load scenes and favorite slots and scan the image library."""
@@ -172,7 +196,7 @@ class SceneStore:
             return
         changed = False
         for scene in self.scenes.values():
-            for step in scene["steps"]:
+            for step in entries(scene["sequence"]):
                 if step.get("entity_id") == old:
                     step["entity_id"] = data["entity_id"]
                     scene["version"] += 1  # open editors hold the old id
@@ -245,11 +269,6 @@ class SceneStore:
     async def async_add_upload(self, data: bytes) -> str:
         """Check, shrink and re-encode an uploaded image; return its image name."""
         folder = upload_dir(self.hass)
-        await self._async_clean_uploads()
-        # files on disk count, also fresh uploads no scene uses yet
-        count = await self.hass.async_add_executor_job(lambda: len(list(folder.glob("*.jpg"))))
-        if count >= int(opt(self.entry, CONF_IMAGE_COUNT)):
-            raise ValidationError("image_limit", str(opt(self.entry, CONF_IMAGE_COUNT)))
         upload_id = f"{uuid4().hex}.jpg"
         max_side, max_kb = int(opt(self.entry, CONF_IMAGE_SIDE)), int(opt(self.entry, CONF_IMAGE_KB))
 
@@ -258,7 +277,12 @@ class SceneStore:
             folder.mkdir(parents=True, exist_ok=True)
             (folder / upload_id).write_bytes(jpeg)
 
-        async with self._upload_lock:
+        async with self._upload_lock:  # counted inside, so parallel uploads cannot pass the limit (review U2)
+            await self._async_clean_uploads()
+            # files on disk count, also fresh uploads no scene uses yet
+            count = await self.hass.async_add_executor_job(lambda: len(list(folder.glob("*.jpg"))))
+            if count >= int(opt(self.entry, CONF_IMAGE_COUNT)):
+                raise ValidationError("image_limit", str(opt(self.entry, CONF_IMAGE_COUNT)))
             await self.hass.async_add_executor_job(write)
         return UPLOAD_PREFIX + upload_id
 
@@ -307,93 +331,310 @@ class SceneStore:
     def used_in(self, scene_id: str) -> dict[str, list[str]]:
         """Return the house scenes calling a scene and the favorite slots it is on."""
         callers = [
-            s["name"] for s in self.scenes.values() if any(st.get("scene_id") == scene_id for st in s["steps"])
+            s["name"]
+            for s in self.scenes.values()
+            if any(st.get("scene_id") == scene_id for st in entries(s["sequence"]))
         ]
         slots = [
             f"{scope}:{i + 1}" for scope, ids in self.favorites.items() for i, s in enumerate(ids) if s == scene_id
         ]
         return {"scenes": callers, "slots": slots}
 
-    async def async_save_scene(
-        self,
-        payload: dict[str, Any],
-        user_id: str | None,
-        is_admin: bool = False,
-        new_id: str | None = None,
-        commit: bool = True,
-    ) -> dict[str, Any]:
-        """Validate and store a new or changed scene."""
-        scene_id: str | None = payload.get("scene_id")
-        existing = self.scenes.get(scene_id) if scene_id else None
-        if scene_id and existing is None:
-            raise ValidationError("not_found")
-        if existing and payload.get("version") != existing["version"]:
-            raise ValidationError("version_conflict")
-
-        name = payload["name"].strip()
-        area_id: str | None = payload.get("area_id")
-        image = payload.get("image")
-        kind = existing["kind"] if existing else KIND_RESIDENT
-        released = existing["content_released"] if existing else False
-        if is_admin:
-            kind = payload.get("kind", kind)
-            released = payload.get("content_released", released)
-        elif existing and kind == KIND_INSTALLER:
-            # residents change only the content of a released installer scene (spec 2)
-            if not released:
-                raise ValidationError("protected")
-            if (name, area_id, image) != (existing["name"], existing["area_id"], existing["image"]):
-                raise ValidationError("protected")
-        elif payload.get("kind", KIND_RESIDENT) != KIND_RESIDENT or "content_released" in payload:
-            raise ValidationError("unauthorized")
+    def _check_name(self, name: str, area_id: str | None, own_id: str | None) -> str:
+        """Return the stripped name; empty, too long or taken in the area is refused."""
+        name = name.strip()
         if not name or len(name) > int(opt(self.entry, CONF_NAME_LENGTH)):
             raise ValidationError("invalid_name")
-        if area_id and ar.async_get(self.hass).async_get_area(area_id) is None:
-            raise ValidationError("invalid_area")
-        others = [s for s in self.scenes.values() if s["id"] != scene_id and s["area_id"] == area_id]
+        others = (s for s in self.scenes.values() if s["area_id"] == area_id and s["id"] != own_id)
         if any(s["name"].casefold() == name.casefold() for s in others):
             raise ValidationError("name_exists")
+        return name
+
+    def _new_scene(self, scene_id: str, area_id: str | None, user_id: str | None) -> dict[str, Any]:
+        """Return an empty scene (name still to set) after the checks for area and limit."""
+        if area_id and ar.async_get(self.hass).async_get_area(area_id) is None:
+            raise ValidationError("invalid_area")
+        existing = self.scenes.get(scene_id)
+        others = [s for s in self.scenes.values() if s["area_id"] == area_id and s["id"] != scene_id]
         limit = int(opt(self.entry, CONF_SCENES_PER_AREA if area_id else CONF_HOUSE_SCENES))
         if len(others) >= limit and not (existing and existing["area_id"] == area_id):
             raise ValidationError("limit_reached")
-        if len(payload["steps"]) > int(opt(self.entry, CONF_STEPS_PER_SCENE)):
-            raise ValidationError("too_many_steps")
-        if image is not None and image != (existing or {}).get("image") and not await self._async_image_exists(image):
-            raise ValidationError("invalid_image")
-        transition = payload.get("transition")
-        if transition is not None and not 0 <= transition <= MAX_TRANSITION:
-            raise ValidationError("invalid_value", "transition")
-        if scene_id and payload.get("copy_from"):
-            raise ValidationError("invalid_value", "copy_from")  # a copy is always a new scene (review T1)
-        base_id = payload.get("copy_from") or scene_id
-        if base_id and base_id not in self.scenes:
-            raise ValidationError("not_found")
-        base_steps = self.scenes[base_id]["steps"] if base_id else []
-        steps = build_steps(self.hass, self.entry, payload["steps"], base_steps, area_id, self.scenes, scene_id)
-
-        scene = {
-            "id": scene_id or new_id or uuid4().hex,
-            "name": name,
+        return {
+            "id": scene_id,
+            "name": "",
             "area_id": area_id,
-            "image": image,
-            "kind": kind,
-            "content_released": bool(released) and kind == KIND_INSTALLER,
-            "transition": transition,
-            "steps": steps,
+            "image": None,
+            "kind": KIND_RESIDENT,
+            "content_released": False,
+            "transition": None,
+            "sequence": [],
             "version": existing["version"] + 1 if existing else 1,
             "changed_by": user_id,
             "changed_at": dt_util.utcnow().isoformat(),
-            "previous": {k: existing[k] for k in CONTENT} if existing else None,
+            "previous": None,
+            "entity_named": False,
         }
-        if existing and existing["area_id"] != area_id:
-            self._clear_favorites(scene["id"])
+
+    async def _async_add(self, scene: dict[str, Any], edit: str) -> dict[str, Any]:
+        """Store a created scene; its creating edit has nothing to undo."""
+        self._edits[scene["id"]] = [edit]
         self.scenes[scene["id"]] = scene
-        if commit:
-            await self._async_commit()
+        await self._async_commit()
         return scene
 
+    async def async_create(self, area_id: str | None, name: str, edit: str, user_id: str | None) -> dict[str, Any]:
+        """Create an empty scene named '<name> N' with the smallest free N."""
+        scene = self._new_scene(uuid4().hex, area_id, user_id)
+        base, length = name.strip(), int(opt(self.entry, CONF_NAME_LENGTH))
+        if not base:
+            raise ValidationError("invalid_name")
+        taken = {s["name"].casefold() for s in self.scenes.values() if s["area_id"] == area_id}
+        n = 1
+        while (candidate := f"{base[: length - len(str(n)) - 1]} {n}").casefold() in taken:
+            n += 1
+        scene["name"] = self._check_name(candidate, area_id, None)
+        return await self._async_add(scene, edit)
+
+    async def async_duplicate(self, scene_id: str, suffix: str, edit: str, user_id: str | None) -> dict[str, Any]:
+        """Copy a scene with new step ids under a free name with the suffix."""
+        if (source := self.scenes.get(scene_id)) is None:
+            raise ValidationError("not_found")
+        scene = self._new_scene(uuid4().hex, source["area_id"], user_id)
+        length = int(opt(self.entry, CONF_NAME_LENGTH))
+        name = (source["name"][: max(0, length - len(suffix))] + suffix)[:length]
+        scene["name"] = self._check_name(self._free_name(name, source["area_id"], scene["id"]), source["area_id"], None)
+        sequence: list[dict[str, Any]] = []
+        for step in deepcopy(source["sequence"]):
+            step["id"] = new_step_id(sequence)
+            sequence.append(step)
+        scene |= {"image": source["image"], "transition": source["transition"], "sequence": sequence}
+        return await self._async_add(scene, edit)
+
+    # ---------- inputs of the editor ----------
+
+    async def async_input(
+        self, msg: dict[str, Any], user_id: str | None, is_admin: bool
+    ) -> tuple[dict[str, Any], bool, dict[str, Any]]:
+        """Apply one input (WebSocket command) to a scene.
+
+        Returns the changed scene, whether the input began an edit, and the command's result.
+        """
+        scene = self.scenes.get(msg["scene_id"])
+        if scene is None:
+            raise ValidationError("not_found")
+        if not self.editable(scene, is_admin):
+            raise ValidationError("protected")
+        command = msg["type"].rsplit("/", 1)[1]
+        if command == "update":
+            await self._async_check_update(scene, msg, is_admin)
+        work = deepcopy(scene)
+        result = getattr(self, f"_{command}")(work, msg, is_admin) or {}
+        began = self._apply(scene, work, msg["edit"], user_id)
+        if command == "update" and work["name"] != scene["name"]:
+            self._rename_entity(work)
+        if command == "update" and "image" in msg:
+            await self._async_commit()  # also cleans the uploads
+        else:
+            self._changed()
+        return work, began, result
+
+    def _check_size(self, before: list[dict[str, Any]], after: list[dict[str, Any]]) -> None:
+        """Entries plus scene steps, and steps, stay within the limit (a lowered limit still allows shrinking)."""
+        limit = int(opt(self.entry, CONF_STEPS_PER_SCENE))
+
+        def size(sequence: list[dict[str, Any]]) -> int:
+            return max(len(list(entries(sequence))), len(sequence))
+
+        if size(after) > limit and size(after) > size(before):
+            raise ValidationError("too_many_steps")
+
+    def _apply(self, scene: dict[str, Any], work: dict[str, Any], edit: str, user_id: str | None) -> bool:
+        """Put the changed copy in place; an unknown edit id begins an edit (the state before can be undone)."""
+        self._check_size(scene["sequence"], work["sequence"])
+        edits = self._edits.setdefault(scene["id"], [])
+        began = edit not in edits
+        if began:
+            edits.append(edit)
+            del edits[:-EDITS_KEPT]
+            work["previous"] = {k: scene[k] for k in CONTENT}
+        work.update(version=scene["version"] + 1, changed_by=user_id, changed_at=dt_util.utcnow().isoformat())
+        self.scenes[scene["id"]] = work
+        return began
+
+    def _changed(self) -> None:
+        self.async_save_later()
+        async_dispatcher_send(self.hass, SIGNAL_CHANGED)
+
+    @staticmethod
+    def _find(work: dict[str, Any], step_id: str) -> dict[str, Any]:
+        step = next((s for s in work["sequence"] if s["id"] == step_id), None)
+        if step is None:
+            raise ValidationError("step_missing")  # removed by another editor: the card reloads
+        return step
+
+    def _step(self, work: dict[str, Any], step_id: str, kind: str) -> dict[str, Any]:
+        step = self._find(work, step_id)
+        if step["type"] != kind:
+            raise ValidationError("invalid_step")
+        return step
+
+    async def _async_check_update(self, scene: dict[str, Any], msg: dict[str, Any], is_admin: bool) -> None:
+        if not is_admin and ("kind" in msg or "content_released" in msg):
+            raise ValidationError("unauthorized")
+        name, image = msg.get("name", scene["name"]).strip(), msg.get("image", scene["image"])
+        # residents change only the content of a released installer scene (spec 2)
+        if not is_admin and scene["kind"] == KIND_INSTALLER and (name, image) != (scene["name"], scene["image"]):
+            raise ValidationError("protected")
+        if image is not None and image != scene["image"] and not await self._async_image_exists(image):
+            raise ValidationError("invalid_image")
+
+    def _update(self, work: dict[str, Any], msg: dict[str, Any], is_admin: bool) -> None:
+        if "name" in msg:
+            work["name"] = self._check_name(msg["name"], work["area_id"], work["id"])
+        if "image" in msg:
+            work["image"] = msg["image"]
+        if "transition" in msg:
+            if msg["transition"] is not None and not 0 <= msg["transition"] <= MAX_TRANSITION:
+                raise ValidationError("invalid_value", "transition")
+            work["transition"] = msg["transition"]
+        if is_admin:
+            work["kind"] = msg.get("kind", work["kind"])
+            work["content_released"] = msg.get("content_released", work["content_released"])
+        work["content_released"] = bool(work["content_released"]) and work["kind"] == KIND_INSTALLER
+
+    def _rename_entity(self, scene: dict[str, Any]) -> None:
+        """First rename: the entity id follows the name unless it was changed by hand (spec 4.3)."""
+        if scene["entity_named"]:
+            return
+        scene["entity_named"] = True
+        registry = er.async_get(self.hass)
+        entity_id = registry.async_get_entity_id("scene", DOMAIN, scene["id"])
+        if entity_id is None or entity_id != scene.get("auto_entity_id"):
+            return
+        new_id = registry.async_get_available_entity_id("scene", slugify(scene["name"]))
+        registry.async_update_entity(entity_id, new_entity_id=new_id)
+
+    def _add_step(self, work: dict[str, Any], msg: dict[str, Any], is_admin: bool = False) -> dict[str, Any]:
+        sequence = work["sequence"]
+        kind = msg.get("step_type")
+        step: dict[str, Any] = {"id": new_step_id(sequence), "type": kind}
+        if kind == "group":
+            area_id = work["area_id"] or msg.get("area_id")  # in a room scene always the room
+            if msg.get("domain") not in ALLOWED_DOMAINS:
+                raise ValidationError("invalid_step")
+            if area_id is None or ar.async_get(self.hass).async_get_area(area_id) is None:
+                raise ValidationError("invalid_area")
+            step |= {"domain": msg["domain"], "area_id": area_id, "entries": []}
+        elif kind == "scene":
+            target = self.scenes.get(msg.get("target") or "")
+            # only house scenes call room scenes, each once: no cycles possible
+            if (
+                work["area_id"]
+                or target is None
+                or not target["area_id"]
+                or msg.get("area_id", target["area_id"]) != target["area_id"]
+                or any(s.get("scene_id") == target["id"] for s in sequence)
+            ):
+                raise ValidationError("invalid_scene_call", target["name"] if target else "")
+            step |= {"scene_id": target["id"], "name": target["name"], "area_id": target["area_id"]}
+        elif kind == "delay":
+            step["seconds"] = min(5, int(opt(self.entry, CONF_MAX_DELAY)))
+        else:
+            raise ValidationError("invalid_step")
+        sequence.insert(max(0, min(msg.get("index", len(sequence)), len(sequence))), step)
+        return {"step_id": step["id"]}
+
+    def _set_delay(self, work: dict[str, Any], msg: dict[str, Any], is_admin: bool = False) -> None:
+        step = self._step(work, msg["step_id"], "delay")
+        if not 0 < msg["seconds"] <= int(opt(self.entry, CONF_MAX_DELAY)):
+            raise ValidationError("invalid_delay")
+        step["seconds"] = msg["seconds"]
+
+    def _remove_step(self, work: dict[str, Any], msg: dict[str, Any], is_admin: bool) -> None:
+        work["sequence"].remove(self._find(work, msg["step_id"]))
+
+    def _move_step(self, work: dict[str, Any], msg: dict[str, Any], is_admin: bool) -> None:
+        sequence = work["sequence"]
+        step = self._find(work, msg["step_id"])
+        sequence.remove(step)
+        sequence.insert(max(0, min(msg["index"], len(sequence))), step)
+
+    @staticmethod
+    def _put(step: dict[str, Any], entry: dict[str, Any]) -> None:
+        """Add the entry to a group step or replace the entry of the same entity."""
+        for index, old in enumerate(step["entries"]):
+            if old["entity_id"] == entry["entity_id"]:
+                step["entries"][index] = entry
+                return
+        step["entries"].append(entry)
+
+    def _set_entry(self, work: dict[str, Any], msg: dict[str, Any], is_admin: bool = False) -> dict[str, Any]:
+        step = self._step(work, msg["step_id"], "group")
+        if msg["entity_id"].split(".", 1)[0] != step["domain"]:
+            raise ValidationError("entity_not_allowed", msg["entity_id"])
+        entry = build_step(
+            self.hass, msg, allowed_entities(self.hass, self.entry), music_favorites(self.hass), step["area_id"]
+        )
+        self._put(step, entry)
+        return {"live": [entry]} if msg.get("live") and step["domain"] in LIVE_DOMAINS else {}
+
+    def _remove_entry(self, work: dict[str, Any], msg: dict[str, Any], is_admin: bool) -> None:
+        step = self._step(work, msg["step_id"], "group")
+        step["entries"] = [e for e in step["entries"] if e["entity_id"] != msg["entity_id"]]
+
+    def _fill(self, step: dict[str, Any], mode: str) -> list[dict[str, Any]]:
+        """Set every released device of the step's domain and area to its current state or off.
+
+        Unreachable devices and flagged entries keep their stored entry (spec 4.5).
+        """
+        allowed = allowed_entities(self.hass, self.entry)
+        favorites = music_favorites(self.hass)
+        stored = {e["entity_id"]: e for e in step["entries"]}
+        changed = []
+        for entity_id, ent in allowed.items():
+            if ent.domain != step["domain"] or entity_area(self.hass, ent) != step["area_id"]:
+                continue
+            if entity_id in stored and step_issue(self.hass, step["area_id"], stored[entity_id], allowed, favorites):
+                continue
+            try:
+                raw = {"entity_id": entity_id, "mode": mode}
+                entry = build_step(self.hass, raw, allowed, favorites, step["area_id"])
+            except ValidationError as err:
+                if err.code != "entity_unavailable":
+                    raise
+                continue
+            self._put(step, entry)
+            changed.append(entry)
+        return changed
+
+    def _set_all(self, work: dict[str, Any], msg: dict[str, Any], is_admin: bool) -> dict[str, Any]:
+        step = self._step(work, msg["step_id"], "group")
+        changed = self._fill(step, msg["mode"])
+        live = msg.get("live") and msg["mode"] == "off" and step["domain"] in LIVE_DOMAINS
+        return {"live": changed} if live else {}
+
+    def _house_off(self, work: dict[str, Any], msg: dict[str, Any], is_admin: bool) -> None:
+        """Every room with released devices of the domain: its first step of that domain switches all off."""
+        if work["area_id"]:
+            raise ValidationError("invalid_step")
+        domain, sequence = msg["domain"], work["sequence"]
+        areas: dict[str, None] = {}  # in order of the device list
+        for ent in allowed_entities(self.hass, self.entry).values():
+            if ent.domain == domain and (area_id := entity_area(self.hass, ent)):
+                areas.setdefault(area_id)
+        for area_id in areas:
+            step = next(
+                (s for s in sequence if s["type"] == "group" and (s["domain"], s["area_id"]) == (domain, area_id)),
+                None,
+            )
+            if step is None:
+                step = {"id": new_step_id(sequence), "type": "group", "domain": domain, "area_id": area_id,
+                        "entries": []}
+                sequence.append(step)
+            self._fill(step, "off")
+
     async def async_undo(self, scene_id: str, version: int, user_id: str | None, is_admin: bool) -> dict[str, Any]:
-        """Bring back the state before the last change (including its image)."""
+        """Bring back the state before the latest edit (including its image)."""
         scene = self.scenes.get(scene_id)
         if scene is None:
             raise ValidationError("not_found")
@@ -406,7 +647,7 @@ class SceneStore:
         previous = dict(scene["previous"])
         if not is_admin and scene["kind"] == KIND_INSTALLER:
             # residents take back only content; name, area and image stay the installer's (spec 2)
-            previous = {k: v for k, v in previous.items() if k in ("steps", "transition")}
+            previous = {k: v for k, v in previous.items() if k in ("sequence", "transition")}
             previous |= {k: scene[k] for k in ("name", "area_id", "image")}
         if previous["area_id"] and ar.async_get(self.hass).async_get_area(previous["area_id"]) is None:
             previous["area_id"] = None
@@ -421,23 +662,29 @@ class SceneStore:
         return scene
 
     async def async_capture(self, scene_id: str, user_id: str | None) -> dict[str, Any]:
-        """Take over the current state of every device of a scene (action resident_scenes.capture)."""
+        """Take over the current state into a scene (action resident_scenes.capture); one edit.
+
+        The first entry of each entity is recaptured; missing, unreachable, moved or no longer
+        released devices keep their stored value (spec 4.5); scene steps, delays and order stay.
+        """
         scene = self.scenes[scene_id]
+        work = deepcopy(scene)
         allowed = allowed_entities(self.hass, self.entry)
         favorites = music_favorites(self.hass)
-        raw = []
-        for step in scene["steps"]:
-            entry = {"delay": step.get("delay", 0)}
-            if "scene_id" in step:  # a stored call is kept, also when its target is gone
-                raw.append({**entry, "mode": "scene", "scene_id": step["scene_id"]})
-                continue
-            # missing, unreachable, moved or no longer released: keep the stored value (spec 4.5)
-            issue = step_issue(self.hass, scene["area_id"], step, allowed, favorites)
-            mode = "capture" if issue in (None, "favorite_missing") else "keep"
-            raw.append({**entry, "entity_id": step["entity_id"], "mode": mode})
-        payload = {k: scene[k] for k in CONTENT if scene[k] is not None or k != "transition"}
-        payload |= {"scene_id": scene_id, "version": scene["version"], "steps": raw}
-        return await self.async_save_scene(payload, user_id, is_admin=True)
+        seen: set[str] = set()
+        for step in work["sequence"]:
+            for index, entry in enumerate(step.get("entries", [])):
+                if entry["entity_id"] in seen:
+                    continue
+                seen.add(entry["entity_id"])
+                raw = {"entity_id": entry["entity_id"], "mode": "capture"}
+                try:
+                    step["entries"][index] = build_step(self.hass, raw, allowed, favorites, step["area_id"])
+                except ValidationError:
+                    continue
+        self._apply(scene, work, uuid4().hex, user_id)
+        self._changed()
+        return work
 
     async def async_delete_scene(self, scene_id: str, is_admin: bool = False) -> dict[str, Any]:
         """Delete a scene and empty its favorite slots; callers keep a 'scene missing' step."""
@@ -447,6 +694,7 @@ class SceneStore:
         if scene["kind"] == KIND_INSTALLER and not is_admin:
             raise ValidationError("protected")
         del self.scenes[scene_id]
+        self._edits.pop(scene_id, None)
         self._clear_favorites(scene_id)
         if self.runner is not None:
             self.runner.async_forget(scene_id)
@@ -472,22 +720,39 @@ class SceneStore:
     async def _async_import(self, template: dict[str, Any]) -> int:
         count = 0
         for item in template.get("scenes", []):
+            # the template key gives a stable id, so a later template replaces this scene
             scene_id = f"tpl_{item['key']}"
             existing = self.scenes.get(scene_id)
-            payload = {
-                "name": item["name"],
-                "area_id": item.get("area_id"),
-                "image": item.get("image"),
+            area_id = item.get("area_id")
+            work = self._new_scene(scene_id, area_id, None)
+            image, transition = item.get("image"), item.get("transition")
+            changed = image is not None and image != (existing or {}).get("image")
+            if changed and not await self._async_image_exists(image):
+                raise ValidationError("invalid_image")
+            if transition is not None and not 0 <= transition <= MAX_TRANSITION:
+                raise ValidationError("invalid_value", "transition")
+            work |= {
+                "name": self._check_name(item["name"], area_id, scene_id),
+                "image": image,
                 "kind": KIND_INSTALLER,
                 "content_released": bool(item.get("content_released", False)),
-                "steps": item.get("steps", []),
+                "transition": transition,
+                "entity_named": True,
+                "previous": {k: existing[k] for k in CONTENT} if existing else None,
             }
-            if item.get("transition") is not None:
-                payload["transition"] = item["transition"]
-            if existing:
-                payload |= {"scene_id": scene_id, "version": existing["version"]}
-            # the template key gives a stable id, so a later template replaces this scene
-            await self.async_save_scene(payload, None, is_admin=True, new_id=scene_id, commit=False)
+            # steps of a 0.2.x template are converted; both go through the builders of the editor
+            sequence = item.get("sequence") or group_steps(self.hass, area_id, item.get("steps", []), self.scenes)
+            for step in sequence:
+                msg = {k: step[k] for k in ("domain", "area_id") if k in step}
+                step_id = self._add_step(work, {**msg, "step_type": step.get("type"), "target": step.get("scene_id")})
+                if step["type"] == "delay":
+                    self._set_delay(work, {"step_id": step_id["step_id"], "seconds": step["seconds"]})
+                for raw in step.get("entries", []):
+                    self._set_entry(work, {**raw, "step_id": step_id["step_id"]})
+            self._check_size([], work["sequence"])
+            if existing and existing["area_id"] != area_id:
+                self._clear_favorites(scene_id)
+            self.scenes[scene_id] = work
             count += 1
         return count
 
@@ -514,8 +779,20 @@ class SceneStore:
         for scope, slots in self.favorites.items():
             self.favorites[scope] = [None if s == scene_id else s for s in slots]
 
+    def _data(self) -> dict[str, Any]:
+        return {"scenes": self.scenes, "favorites": self.favorites}
+
+    @callback
+    def async_save_later(self) -> None:
+        """Write within SAVE_DELAY seconds (or on stop)."""
+        self._store.async_delay_save(self._data, SAVE_DELAY)
+
+    async def async_write(self) -> None:
+        """Write now, also what waits for the delayed save (on unload)."""
+        await self._store.async_save(self._data())
+
     async def _async_commit(self) -> None:
-        await self._store.async_save({"scenes": self.scenes, "favorites": self.favorites})
+        await self.async_write()
         await self._async_clean_uploads()
         async_dispatcher_send(self.hass, SIGNAL_CHANGED)
 

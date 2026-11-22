@@ -21,19 +21,28 @@ from homeassistant.helpers.script import SCRIPT_MODE_RESTART, Script
 from homeassistant.helpers.state import async_reproduce_state
 
 from .const import DOMAIN, EVENT_BATCH, EVENT_SKIPPED
-from .model import allowed_entities, music_favorites
+from .model import allowed_entities, music_favorites, step_key
 
 _LOGGER = logging.getLogger(__name__)
 
 
-def batches(steps: list[dict[str, Any]]) -> list[tuple[float, list[dict[str, Any]]]]:
-    """Split steps into (delay, steps) batches; a delay moves all following steps."""
-    result: list[tuple[float, list[dict[str, Any]]]] = []
-    for step in steps:
-        if not result or step.get("delay"):
-            result.append((step.get("delay", 0), []))
-        result[-1][1].append(step)
-    return result
+def batches(sequence: list[dict[str, Any]]) -> list[tuple[float, list[dict[str, Any]]]]:
+    """Split a sequence at its delay steps into (delay, entries) batches.
+
+    Scene steps become {"scene_id", "name"}. Within a batch an entity keeps only its
+    lowest entry; a trailing delay has no effect.
+    """
+    result: list[tuple[float, list[dict[str, Any]]]] = [(0, [])]
+    for step in sequence:
+        if step["type"] == "delay":
+            result.append((step["seconds"], []))
+        elif step["type"] == "scene":
+            result[-1][1].append({"scene_id": step["scene_id"], "name": step["name"]})
+        else:
+            result[-1][1].extend(step["entries"])
+    while len(result) > 1 and not result[-1][1]:
+        result.pop()
+    return [(delay, list({step_key(e): e for e in items}.values())) for delay, items in result]
 
 
 class SceneRunner:
@@ -50,7 +59,7 @@ class SceneRunner:
         self.scenes = scenes
         self._scripts: dict[str, tuple[int, Script, list]] = {}
         # context id -> scenes already started by that trigger; each runs once per trigger (review T1)
-        self._chains: dict[str | None, set[str]] = {}
+        self._chains: dict[str, set[str]] = {}
         entry.async_on_unload(hass.bus.async_listen(EVENT_BATCH, self._batch))
         entry.async_on_unload(self._stop_all)
 
@@ -69,9 +78,11 @@ class SceneRunner:
         """Start a scene; a run of the same scene still going is cancelled."""
         scene = self.scenes[scene_id]
         if not called:
-            key = context.id if context else None
-            self._chains.pop(key, None)
-            self._chains[key] = {scene_id}
+            # every top-level run is its own trigger, also two runs of one automation (review U1)
+            context = Context(
+                user_id=context.user_id if context else None, parent_id=context.id if context else None
+            )
+            self._chains[context.id] = {scene_id}
             # shortcut: keeps the chains of the last 100 triggers, enough for delays of running scenes
             while len(self._chains) > 100:
                 del self._chains[next(iter(self._chains))]
@@ -79,7 +90,7 @@ class SceneRunner:
         if script is None or version != scene["version"]:
             if script is not None:
                 await script.async_stop()
-            groups = batches(scene["steps"])
+            groups = batches(scene["sequence"])
             sequence: list[dict[str, Any]] = []
             for index, (delay, _) in enumerate(groups):
                 if delay:
@@ -125,7 +136,7 @@ class SceneRunner:
         for step in steps:
             if "scene_id" in step:
                 target = ent_reg.async_get_entity_id("scene", DOMAIN, step["scene_id"])
-                chain = self._chains.setdefault(context.id if context else None, {scene["id"]})
+                chain = self._chains.setdefault(context.id if context else "", {scene["id"]})
                 if step["scene_id"] not in self.scenes or target is None:
                     skipped.append(step["name"])  # scene missing
                 elif step["scene_id"] in chain:

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from functools import partial
 from typing import Any
 
 import voluptuous as vol
@@ -10,12 +9,12 @@ import voluptuous as vol
 from homeassistant.components import websocket_api
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.const import STATE_UNAVAILABLE
-from homeassistant.core import Context, HomeAssistant, State, callback
+from homeassistant.core import HomeAssistant, State, callback
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
-from homeassistant.helpers.state import async_reproduce_state
 
 from .const import (
+    ALLOWED_DOMAINS,
     CONF_FAVORITE_SLOTS,
     CONF_HOUSE_SCENES,
     CONF_MAX_DELAY,
@@ -37,7 +36,6 @@ from .const import (
 from .model import (
     ValidationError,
     allowed_entities,
-    build_step,
     can_control,
     can_edit,
     entity_area,
@@ -53,26 +51,51 @@ type Connection = websocket_api.ActiveConnection
 
 VALUE_KEYS = ("brightness", "color_temp_kelvin", "hue", "saturation", "position", "tilt", "hvac_mode",
               "temperature", "percentage", "on")
-STEP_SCHEMA = vol.Schema(
-    {
-        vol.Optional("entity_id"): str,
-        vol.Optional("scene_id"): str,
-        vol.Required("mode"): vol.In(["capture", "off", "keep", "set", "music", "scene"]),
-        vol.Optional("music"): vol.In(["off", "on", "favorite"]),
-        vol.Optional("volume"): vol.All(vol.Coerce(float), vol.Range(min=0, max=1)),
-        vol.Optional("favorite_id"): str,
-        vol.Optional("values"): {vol.In(VALUE_KEYS): vol.Any(bool, int, float, str)},
-        vol.Optional("delay"): vol.All(vol.Coerce(float), vol.Range(min=0)),
-    }
-)
+ENTRY_SCHEMA = {
+    vol.Required("entity_id"): str,
+    vol.Required("mode"): vol.In(["capture", "off", "set", "music"]),
+    vol.Optional("music"): vol.In(["off", "on", "favorite"]),
+    vol.Optional("volume"): vol.All(vol.Coerce(float), vol.Range(min=0, max=1)),
+    vol.Optional("favorite_id"): str,
+    vol.Optional("values"): {vol.In(VALUE_KEYS): vol.Any(bool, int, float, str)},
+}
+DOMAINS = vol.In(sorted(ALLOWED_DOMAINS))
+# fields of the inputs of the editor; each also takes scene_id and edit (design "Edits")
+INPUTS: dict[str, dict[Any, Any]] = {
+    "update": {
+        vol.Optional("name"): str,
+        vol.Optional("image"): vol.Any(str, None),
+        vol.Optional("transition"): vol.Any(None, vol.All(vol.Coerce(float), vol.Range(min=0))),
+        vol.Optional("kind"): vol.In([KIND_RESIDENT, KIND_INSTALLER]),
+        vol.Optional("content_released"): bool,
+    },
+    "add_step": {
+        vol.Required("step_type"): vol.In(["group", "scene", "delay"]),
+        vol.Optional("domain"): DOMAINS,
+        vol.Optional("area_id"): vol.Any(str, None),
+        vol.Optional("target"): str,
+        vol.Optional("index"): int,
+    },
+    "set_delay": {vol.Required("step_id"): str, vol.Required("seconds"): vol.Coerce(float)},
+    "remove_step": {vol.Required("step_id"): str},
+    "move_step": {vol.Required("step_id"): str, vol.Required("index"): int},
+    "set_entry": {vol.Required("step_id"): str, **ENTRY_SCHEMA, vol.Optional("live", default=False): bool},
+    "remove_entry": {vol.Required("step_id"): str, vol.Required("entity_id"): str},
+    "set_all": {
+        vol.Required("step_id"): str,
+        vol.Required("mode"): vol.In(["capture", "off"]),
+        vol.Optional("live", default=False): bool,
+    },
+    "house_off": {vol.Required("domain"): DOMAINS},
+}
 
 
 @callback
 def async_register(hass: HomeAssistant) -> None:
     """Register the commands."""
     for command in (
-        ws_list, ws_scene, ws_devices, ws_save, ws_delete, ws_undo, ws_set_favorite, ws_subscribe,
-        ws_preview, ws_preview_end, ws_rights, ws_set_right,
+        ws_list, ws_scene, ws_devices, ws_create, ws_duplicate, ws_delete, ws_undo, ws_set_favorite, ws_subscribe,
+        ws_rights, ws_set_right, *(_input_command(name, fields) for name, fields in INPUTS.items()),
     ):
         websocket_api.async_register_command(hass, command)
 
@@ -164,7 +187,7 @@ def ws_list(hass: HomeAssistant, connection: Connection, msg: dict[str, Any]) ->
 @websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/scene", vol.Required("scene_id"): str})
 @callback
 def ws_scene(hass: HomeAssistant, connection: Connection, msg: dict[str, Any]) -> None:
-    """Return one scene with its steps, the reason a step is marked, and where it is used."""
+    """Return one scene with its sequence, the reason an entry is marked, and where it is used."""
     if (store := _store(hass, connection, msg["id"])) is None:
         return
     if (scene := store.scenes.get(msg["scene_id"])) is None:
@@ -172,21 +195,25 @@ def ws_scene(hass: HomeAssistant, connection: Connection, msg: dict[str, Any]) -
         return
     allowed = allowed_entities(hass, store.entry)
     favorites = music_favorites(hass)
-    steps = []
-    for step in scene["steps"]:
+    sequence = []
+    for step in scene["sequence"]:
         item = dict(step)
-        if "scene_id" in step:
+        if step["type"] == "scene":
             target = store.scenes.get(step["scene_id"])
             issue = None if target and target["area_id"] else "no_room_scene" if target else "scene_missing"
             item |= {"issue": issue, "name": target["name"] if target else step["name"]}
-        else:
-            issue = step_issue(hass, scene["area_id"], step, allowed, favorites)
-            item |= {"issue": issue, "name": _name(hass, step["entity_id"])}
-            if step.get("music") == "favorite":  # a renamed favorite shows its new name (spec 4.6)
-                item["favorite_name"] = favorites.get(step["favorite_id"], step.get("favorite_name"))
-        steps.append(item)
+        elif step["type"] == "group":
+            item["entries"] = []
+            for entry in step["entries"]:
+                issue = step_issue(hass, step["area_id"], entry, allowed, favorites)
+                shown = {**entry, "issue": issue, "name": _name(hass, entry["entity_id"])}
+                if entry.get("music") == "favorite":  # a renamed favorite shows its new name (spec 4.6)
+                    shown["favorite_name"] = favorites.get(entry["favorite_id"], entry.get("favorite_name"))
+                item["entries"].append(shown)
+        sequence.append(item)
     connection.send_result(
-        msg["id"], {**_summary(store, scene, connection.user), "steps": steps, "used_in": store.used_in(scene["id"])}
+        msg["id"],
+        {**_summary(store, scene, connection.user), "sequence": sequence, "used_in": store.used_in(scene["id"])},
     )
 
 
@@ -267,28 +294,65 @@ async def _run(connection: Connection, msg: dict[str, Any], job) -> Any:
 
 @websocket_api.websocket_command(
     {
-        vol.Required("type"): f"{DOMAIN}/save",
-        vol.Optional("scene_id"): str,
-        vol.Optional("version"): int,
-        vol.Optional("copy_from"): str,
+        vol.Required("type"): f"{DOMAIN}/create",
+        vol.Optional("area_id", default=None): vol.Any(str, None),
         vol.Required("name"): str,
-        vol.Optional("area_id"): vol.Any(str, None),
-        vol.Optional("image"): vol.Any(str, None),
-        vol.Optional("kind"): vol.In([KIND_RESIDENT, KIND_INSTALLER]),
-        vol.Optional("content_released"): bool,
-        vol.Optional("transition"): vol.Any(None, vol.All(vol.Coerce(float), vol.Range(min=0))),
-        vol.Required("steps"): [STEP_SCHEMA],
+        vol.Required("edit"): str,
     }
 )
 @websocket_api.async_response
-async def ws_save(hass: HomeAssistant, connection: Connection, msg: dict[str, Any]) -> None:
-    """Create or change a scene."""
+async def ws_create(hass: HomeAssistant, connection: Connection, msg: dict[str, Any]) -> None:
+    """Create an empty scene; the card sends the translated base name."""
     if (store := _editor(hass, connection, msg["id"])) is None:
         return
-    user = connection.user
-    if scene := await _run(connection, msg, store.async_save_scene(msg, user.id, user.is_admin)):
-        _changed(hass, connection, msg, scene, "changed" if "scene_id" in msg else "created")
+    job = store.async_create(msg["area_id"], msg["name"], msg["edit"], connection.user.id)
+    if scene := await _run(connection, msg, job):
+        _changed(hass, connection, msg, scene, "created")
         connection.send_result(msg["id"], {"scene_id": scene["id"], "version": scene["version"]})
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): f"{DOMAIN}/duplicate",
+        vol.Required("scene_id"): str,
+        vol.Required("suffix"): str,
+        vol.Required("edit"): str,
+    }
+)
+@websocket_api.async_response
+async def ws_duplicate(hass: HomeAssistant, connection: Connection, msg: dict[str, Any]) -> None:
+    """Copy a scene; the card sends the translated suffix."""
+    if (store := _editor(hass, connection, msg["id"])) is None:
+        return
+    job = store.async_duplicate(msg["scene_id"], msg["suffix"], msg["edit"], connection.user.id)
+    if scene := await _run(connection, msg, job):
+        _changed(hass, connection, msg, scene, "created")
+        connection.send_result(msg["id"], {"scene_id": scene["id"], "version": scene["version"]})
+
+
+def _input_command(name: str, fields: dict[Any, Any]):
+    """Build the command of one input of the editor."""
+
+    @websocket_api.websocket_command(
+        {vol.Required("type"): f"{DOMAIN}/{name}", vol.Required("scene_id"): str, vol.Required("edit"): str, **fields}
+    )
+    @websocket_api.async_response
+    async def ws_input(hass: HomeAssistant, connection: Connection, msg: dict[str, Any]) -> None:
+        """Apply the input at once; the first input of an edit goes to the logbook."""
+        if (store := _editor(hass, connection, msg["id"])) is None:
+            return
+        user = connection.user
+        if (done := await _run(connection, msg, store.async_input(msg, user.id, user.is_admin))) is None:
+            return
+        scene, began, result = done
+        if began:
+            _changed(hass, connection, msg, scene, "changed")
+        if live := result.pop("live", None):
+            # live adjustment: the device follows the input, the same way a run applies it
+            await store.runner.async_apply(scene, live, connection.context(msg))
+        connection.send_result(msg["id"], {"version": scene["version"], **result})
+
+    return ws_input
 
 
 @websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/delete", vol.Required("scene_id"): str})
@@ -347,109 +411,6 @@ def ws_subscribe(hass: HomeAssistant, connection: Connection, msg: dict[str, Any
         connection.send_message(websocket_api.event_message(msg["id"], {"changed": True}))
 
     connection.subscriptions[msg["id"]] = async_dispatcher_connect(hass, SIGNAL_CHANGED, forward)
-    connection.send_result(msg["id"])
-
-
-# ---------- live preview (spec 5.4) ----------
-
-
-PREVIEW = f"{DOMAIN}_preview"  # key in connection.subscriptions, no message id can collide
-
-
-def _snapshots(hass: HomeAssistant, store: SceneStore, connection: Connection, edit: str) -> dict[str, State]:
-    """Per connection and edit (two cards on one page): entity id -> state before its first preview.
-
-    A connection that closes during a preview counts as cancel (panel reloaded, app closed).
-    """
-    if connection not in store.previews:
-        store.previews[connection] = {}
-
-        @callback
-        def closed() -> None:
-            edits = store.previews.pop(connection, {}).values()
-            if states := [state for snapshots in edits for state in snapshots.values()]:
-                context = Context(user_id=connection.user.id)
-                hass.async_create_background_task(_restore(hass, store, states, context), f"{DOMAIN} preview")
-
-        connection.subscriptions[PREVIEW] = closed
-    return store.previews[connection].setdefault(edit, {})
-
-
-async def _restore(hass: HomeAssistant, store: SceneStore, states: list[State], context: Context) -> None:
-    """Put devices back to their state from before the preview."""
-    allowed = allowed_entities(hass, store.entry)
-    states = [s for s in states if s.entity_id in allowed]
-    await async_reproduce_state(hass, [s for s in states if s.domain != "media_player"], context=context)
-    # the preview changed only volume or stopped playback, so only that is undone
-    for old in (s for s in states if s.domain == "media_player"):
-        call = partial(hass.services.async_call, "media_player", blocking=True, context=context)
-        if (volume := old.attributes.get("volume_level")) is not None:
-            await call("volume_set", {"entity_id": old.entity_id, "volume_level": volume})
-        if old.state == "playing":
-            await call("media_play", {"entity_id": old.entity_id})
-
-
-@websocket_api.websocket_command(
-    {
-        vol.Required("type"): f"{DOMAIN}/preview",
-        vol.Required("step"): STEP_SCHEMA,
-        vol.Optional("area_id"): vol.Any(str, None),
-        vol.Optional("edit", default=""): str,
-    }
-)
-@websocket_api.async_response
-async def ws_preview(hass: HomeAssistant, connection: Connection, msg: dict[str, Any]) -> None:
-    """Switch one device to the value set in the editor; the state before is kept for cancel.
-
-    Music favorites are not started here, only on the play button (spec 5.4).
-    """
-    if (store := _editor(hass, connection, msg["id"])) is None:
-        return
-    raw = msg["step"]
-    if raw["mode"] not in ("off", "set", "music") or "entity_id" not in raw or raw.get("music") == "favorite":
-        connection.send_error(msg["id"], "invalid_step", "No preview for this step")
-        return
-    try:
-        step = build_step(hass, raw, allowed_entities(hass, store.entry), {}, msg.get("area_id"))
-    except ValidationError as err:
-        connection.send_error(msg["id"], err.code, str(err))
-        return
-    snapshots = _snapshots(hass, store, connection, msg["edit"])
-    eid = step["entity_id"]
-    if eid not in snapshots and (current := hass.states.get(eid)):
-        snapshots[eid] = current
-    context = connection.context(msg)
-    if step.get("music") == "off":
-        await hass.services.async_call("media_player", "media_stop", {"entity_id": eid}, blocking=True, context=context)
-    elif "music" in step:
-        await hass.services.async_call(
-            "media_player", "volume_set", {"entity_id": eid, "volume_level": step["volume"]},
-            blocking=True, context=context,
-        )
-    else:
-        await async_reproduce_state(hass, [State(eid, step["state"], step["attributes"])], context=context)
-    connection.send_result(msg["id"])
-
-
-@websocket_api.websocket_command(
-    {
-        vol.Required("type"): f"{DOMAIN}/preview_end",
-        vol.Required("restore"): bool,
-        vol.Optional("edit", default=""): str,
-    }
-)
-@websocket_api.async_response
-async def ws_preview_end(hass: HomeAssistant, connection: Connection, msg: dict[str, Any]) -> None:
-    """End the preview; on cancel the devices go back to their state from before editing."""
-    if (store := _store(hass, connection, msg["id"])) is None:
-        return
-    edits = store.previews.get(connection, {})
-    states = list(edits.pop(msg["edit"], {}).values())
-    if not edits:
-        store.previews.pop(connection, None)
-        connection.subscriptions.pop(PREVIEW, None)
-    if msg["restore"] and states:
-        await _restore(hass, store, states, connection.context(msg))
     connection.send_result(msg["id"])
 
 

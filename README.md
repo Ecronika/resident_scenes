@@ -4,12 +4,18 @@ Lets residents **without admin rights** create, edit, run and delete scenes from
 Scenes are stored by the integration (not in YAML), survive restarts, are part of every backup and appear as normal
 `scene` entities for automations, schedules and voice.
 
-Version 0.2 can:
+Version 0.3 can:
 
-- room scenes and house scenes, from the current state, with devices set to "off" without switching them, or with
-  values set directly (brightness, colour temperature, colour, position, tilt, mode, temperature)
-- delays per step and a transition time; running a scene again restarts it
-- live preview while editing, cancel restores the devices
+- a scene editor where every input is saved at once, "Done" ends editing, "New scene"
+  creates a scene at once
+- a scene is a sequence of steps: a trade (light, shading, climate, switches, fans, music, scenes) with its ticked
+  devices, a call of a room scene, or a delay; the same trade and the same device may appear in several steps
+  ("light on, 5 s, light off")
+- devices from the current state, set to "off" or with values set directly (brightness, colour temperature, colour,
+  position, tilt, mode, temperature); a transition time; running a scene again restarts it
+- live adjustments per step for lights, shading, switches and fans: off on every opening, switching on takes over
+  all devices of the step; leaving the editor restores nothing
+- "All off in the house" per trade in house scenes, sorting by dragging
 - house scenes calling room scenes
 - music steps for any released media player: off, or on with volume; with Sonos also a Sonos favorite with volume
   (favorites only, no free selection)
@@ -18,7 +24,7 @@ Version 0.2 can:
 - installer scenes (protected, content can be released to residents), loaded from a template
 - edit right for every account that may control devices (not read-only accounts); the installer or a main user can
   withdraw it per account in the card; panel accounts have no edit right by default
-- undo of the last change
+- undo of the last edit (all inputs from opening the editor to leaving it)
 - device release via a label; locks, alarm panels and configuration entities are never accepted
 - logbook entries for every change, attributed to the account; repair issues for missing devices and scenes
 
@@ -43,6 +49,10 @@ scope: area        # area or house
 area: kitchen      # area id, only with scope: area
 view: manage       # manage (list and editor), list (run only) or favorites (favorite slots as tiles)
 ```
+
+The view `manage` shows list and scene side by side from 600 pixels card width. In a view of type "Sections" a
+section is narrower: give the card's section the full width, or use a panel view. The card asks for the full width
+of its section.
 
 ## Action
 
@@ -69,13 +79,22 @@ scenes:
     area_id: kitchen
     content_released: true     # residents may change the devices
     transition: 2
-    steps:
-      - {entity_id: light.kitchen, mode: set, values: {brightness: 200, color_temp_kelvin: 3000}}
-      - {entity_id: cover.kitchen, mode: "off", delay: 5}  # quoted, YAML reads off as false
-      - {entity_id: cover.living, mode: set, values: {position: 20, tilt: 50}}
+    sequence:
+      - type: group
+        domain: light
+        entries:
+          - {entity_id: light.kitchen, mode: set, values: {brightness: 200, color_temp_kelvin: 3000}}
+      - {type: delay, seconds: 5}
+      - type: group
+        domain: cover
+        entries:
+          - {entity_id: cover.kitchen, mode: "off"}  # quoted, YAML reads off as false
+          - {entity_id: cover.living, mode: set, values: {position: 20, tilt: 50}}
 ```
 
-Options get the same checks as the settings form. A template is loaded completely or not at all.
+In house scenes a group step names its room with `area_id`, and `{type: scene, area_id: kitchen, scene_id: ...}`
+calls a room scene. Templates of version 0.2 with `steps` are still accepted and converted. Options get the same
+checks as the settings form. A template is loaded completely or not at all.
 For blinds with slats give `position` and `tilt`: Home Assistant opens the slats fully if only the position is set.
 
 ## Rights and security

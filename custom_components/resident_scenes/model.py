@@ -1,8 +1,9 @@
-"""Permissions, device release and step building."""
+"""Permissions, device release, entries and sequences."""
 
 from __future__ import annotations
 
 from typing import Any
+from uuid import uuid4
 
 from homeassistant.auth.models import User
 from homeassistant.auth.permissions.const import POLICY_CONTROL
@@ -15,7 +16,6 @@ from .const import (
     ALLOWED_DOMAINS,
     CONF_LABEL,
     CONF_MAIN_USERS,
-    CONF_MAX_DELAY,
     CONF_PANEL_USERS,
     CONF_PANELS_WITH_EDIT,
     CONF_USERS_WITHOUT_EDIT,
@@ -159,7 +159,7 @@ def step_issue(
 
 
 def step_key(step: dict[str, Any]) -> str:
-    """Return what a step acts on: an entity id or a called scene."""
+    """Return what an entry acts on: an entity id or a called scene."""
     return step.get("entity_id") or f"scene:{step['scene_id']}"
 
 
@@ -293,57 +293,61 @@ def build_step(
     raise ValidationError("invalid_step", entity_id)
 
 
-def build_steps(
-    hass: HomeAssistant,
-    entry: ConfigEntry,
-    raw_steps: list[dict[str, Any]],
-    base_steps: list[dict[str, Any]],
-    area_id: str | None = None,
-    scenes: dict[str, dict[str, Any]] | None = None,
-    own_id: str | None = None,
-) -> list[dict[str, Any]]:
-    """Validate the requested steps and resolve them into stored steps.
+def entries(sequence: list[dict[str, Any]]):
+    """Yield what a sequence acts on: the entries of its group steps and its scene steps."""
+    for step in sequence:
+        if step["type"] == "group":
+            yield from step["entries"]
+        elif step["type"] == "scene":
+            yield step
 
-    ``keep`` keeps the stored value of the base scene, also for devices no longer
-    released or moved, so the scene stays editable (spec 4.5). ``scene`` calls a
-    room scene from a house scene. Every step may carry a delay.
+
+def new_step_id(sequence: list[dict[str, Any]]) -> str:
+    """Return a step id not used in the sequence."""
+    used = {step["id"] for step in sequence}
+    # shortcut: random 32 bits, a removed id could come back in about one of 4e9 additions
+    step_id = uuid4().hex[:8]
+    while step_id in used:  # pragma: no cover
+        step_id = uuid4().hex[:8]
+    return step_id
+
+
+def group_steps(
+    hass: HomeAssistant, area_id: str | None, steps: list[dict[str, Any]], scenes: dict[str, dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """Turn 0.2.x steps into a sequence (storage format 3) that runs the same.
+
+    A step with a delay starts with a delay step; between two delays device entries are
+    grouped per (area, domain) in order of first appearance; a call becomes a scene step.
+    Works for stored steps and for template steps (which carry a mode).
     """
-    allowed = allowed_entities(hass, entry)
-    favorites = music_favorites(hass)
-    max_delay = int(opt(entry, CONF_MAX_DELAY))
-    base = {step_key(step): step for step in base_steps}
-    seen: set[str] = set()
-    steps: list[dict[str, Any]] = []
-    for raw in raw_steps:
-        mode = raw["mode"]
-        if mode == "scene":
-            scene_id = str(raw.get("scene_id"))
-            target = (scenes or {}).get(scene_id)
-            # a stored call stays even if its target is gone or no room scene any more (like "keep")
-            kept = base.get(f"scene:{scene_id}")
-            # only house scenes call scenes, only room scenes are called: no cycles possible
-            if area_id or scene_id == own_id or (kept is None and (target is None or target["area_id"] is None)):
-                raise ValidationError("invalid_scene_call", target["name"] if target else "")
-            step: dict[str, Any] = {"scene_id": scene_id, "name": target["name"] if target else kept["name"]}
-        elif "entity_id" not in raw:
-            raise ValidationError("invalid_step")
-        elif mode == "keep":
-            if (kept := base.get(raw["entity_id"])) is None:
-                raise ValidationError("invalid_step", raw["entity_id"])
-            step = {k: v for k, v in kept.items() if k != "delay"}
-        else:
-            step = build_step(hass, raw, allowed, favorites, area_id)
-        key = step_key(step)
-        if key in seen:
-            raise ValidationError("duplicate_entity", key)
-        seen.add(key)
-        delay = raw.get("delay", 0)
-        if not 0 <= delay <= max_delay:
-            raise ValidationError("invalid_delay", key)
-        if delay:
-            step["delay"] = delay
-        steps.append(step)
-    return steps
+    ent_reg = er.async_get(hass)
+    sequence: list[dict[str, Any]] = []
+    groups: dict[tuple[str | None, str], dict[str, Any]] = {}
+    for step in steps:
+        if step.get("delay"):
+            sequence.append({"id": new_step_id(sequence), "type": "delay", "seconds": step["delay"]})
+            groups = {}
+        entry = {k: v for k, v in step.items() if k != "delay"}
+        if "scene_id" in entry:
+            target = scenes.get(entry["scene_id"]) or {}
+            sequence.append(
+                {
+                    "id": new_step_id(sequence), "type": "scene", "scene_id": entry["scene_id"],
+                    "name": entry.get("name") or target.get("name", ""), "area_id": target.get("area_id"),
+                }
+            )
+            continue
+        area = area_id
+        if area is None and (ent := ent_reg.async_get(entry["entity_id"])):
+            area = entity_area(hass, ent)
+        key = (area, entry["entity_id"].split(".", 1)[0])
+        if key not in groups:
+            groups[key] = {"id": new_step_id(sequence), "type": "group", "domain": key[1], "area_id": area,
+                           "entries": []}
+            sequence.append(groups[key])
+        groups[key]["entries"].append(entry)
+    return sequence
 
 
 def _music_step(
