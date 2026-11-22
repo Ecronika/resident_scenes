@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.3.5
+
+Fixes of the 0.3.4 review.
+
+- Scene view in narrow cards: the buttons take a full-width row of their own under image and name, so the head stays
+  at 80 + 8 + 44 pixels (two button rows at most 184) and needs no height limit; from a column of 600 pixels image,
+  name and buttons stay in one row of at most 120 pixels (AA1, spec 5.2).
+- Light with a white channel of its own and no stored colour, off: the card shows "White" as the default and sends
+  `white` with the first input instead of an orange (AA2).
+- List: the heading "Scenes" is shown only when rows follow (AA3).
+- Server: an input that changes nothing is accepted without beginning an edit; no new version, no logbook entry, the
+  state for "Undo" stays (AA4, spec 4.5).
+- Edit mode: the image button no longer has a gap under the image; the name in the head bar stays on one line and is
+  shortened, the full name is in the field below (AA5).
+
 ## 0.3.4
 
 Fixes of the 0.3.3 review and draft 0.12 of the functional spec.

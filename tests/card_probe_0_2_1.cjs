@@ -112,7 +112,7 @@ const editScene = async (s, sequence) => {
     s.scene = scene([]);
     const card = await make(s, { scope: "area", area: "r2", view: "manage" });
     const root = card.shadowRoot;
-    assert.deepStrictEqual([...root.querySelectorAll("h3")].map((h) => h.textContent), ["Favoriten", "Szenen"], "V3: favorites on top");
+    assert.deepStrictEqual([...root.querySelectorAll("h3")].map((h) => h.textContent), ["Favoriten"], "V3: favorites on top"); // AA3: no "Szenen" without rows
     await click(root, '[data-action="select"][data-id="s1"]');
     assert.ok(q(root, '.row.selected [data-id="s1"]'), "V10: selected row marked");
     assert.match(q(root, '[data-action="heart"]').textContent, /Platz 1/);

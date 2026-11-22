@@ -4,7 +4,7 @@ import { LitElement, html, css, nothing } from "lit";
 import { live } from "lit/directives/live.js";
 import { repeat } from "lit/directives/repeat.js";
 
-const VERSION = "0.3.4"; // must match the integration (checked by tests)
+const VERSION = "0.3.5"; // must match the integration (checked by tests)
 const WS = "resident_scenes";
 const HOUSE = "_house";
 const DOMAINS = ["light", "cover", "climate", "switch", "fan", "media_player", "scene"];
@@ -462,8 +462,8 @@ class ResidentScenesCard extends LitElement {
         ? html`<button class="wide" data-action="rights" @click=${this._openRights}>${this._t("rights")}</button>`
         : nothing}
       ${favs.length ? html`<h3>${this._t("favorites")}</h3>${favs.map(row)}` : nothing}
-      <h3>${this._t("scenes")}</h3>
-      ${rest.length ? rest.map(row) : favs.length ? nothing : html`<p class="muted">${this._t("empty")}</p>`}
+      ${rest.length ? html`<h3>${this._t("scenes")}</h3>${rest.map(row)}`
+        : favs.length ? nothing : html`<h3>${this._t("scenes")}</h3><p class="muted">${this._t("empty")}</p>`}
       ${d.foreign_scenes.length
         ? html`<h3>${this._t("other_scenes")}</h3>
             ${d.foreign_scenes.map(
@@ -1044,13 +1044,15 @@ class ResidentScenesCard extends LitElement {
     if (dev.domain === "light") {
       // an input sends only its own value, the server keeps the stored rest, e.g. an xy colour (spec 4.5, X11)
       // the white mode of its own: a third state "Weiß" without sliders, kept by the server (Z2)
-      const plain = on && v.white && c.white_mode;
+      // no colour mode at all (the light is off): "An" and the first input store the colour shown as well (spec 4.5, Y1)
+      const unset = !on || (!source.attributes?.color_mode && v.color_temp_kelvin == null && v.hue == null);
+      // with a white channel of its own and no stored colour the default is "Weiß" (review AA2)
+      const plain = !!c.white_mode && (on && !!v.white || unset && v.hue == null && v.color_temp_kelvin == null);
       const white = !plain && c.color_temp && (!c.color || v.hue == null);
       const kelvin = v.color_temp_kelvin ?? c.min_kelvin ?? 2700;
       const colour = (patch) => set({ hue: v.hue ?? 30, saturation: v.saturation ?? 100, ...patch });
-      // no colour mode at all (the light is off): "An" and the first input store the colour shown as well (spec 4.5, Y1)
-      const shown = !on || (!source.attributes?.color_mode && v.color_temp_kelvin == null && v.hue == null)
-        ? (white ? { color_temp_kelvin: kelvin } : c.color && !plain ? { hue: v.hue ?? 30, saturation: v.saturation ?? 100 } : {})
+      const shown = unset
+        ? (plain ? { white: true } : white ? { color_temp_kelvin: kelvin } : c.color ? { hue: v.hue ?? 30, saturation: v.saturation ?? 100 } : {})
         : {};
       const keep = (values) => set({ ...shown, ...values });
       const modes = [
@@ -1311,14 +1313,20 @@ class ResidentScenesCard extends LitElement {
       background: var(--secondary-background-color); display: inline-flex; align-items: center; justify-content: center;
       color: var(--secondary-text-color); }
     .hero svg { width: 40px; height: 40px; }
-    .head { display: flex; align-items: center; gap: 12px; max-height: 200px; }
-    .head .title { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 0 8px; }
-    .head h2 { flex: 1 1 12em; min-width: 0; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
-    .head .tools { display: flex; flex-wrap: wrap; gap: 8px; }
+    .head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+    .head .title { display: contents; }
+    .head h2 { flex: 1 1 0; min-width: 0; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+    .head .tools { display: flex; flex-wrap: wrap; gap: 8px; flex: 1 1 100%; }
     .col-detail { container-type: inline-size; }
-    @container (width >= 600px) { .head { max-height: 120px; } }
+    /* narrow: the buttons take a full-width row under image and name, 80 + 8 + 44 (+ 8 + 44) px (review AA1) */
+    @container (width >= 600px) {
+      .head { flex-wrap: nowrap; max-height: 120px; }
+      .head .title { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 0 8px; }
+      .head h2 { flex: 1 1 12em; } .head .tools { flex: initial; }
+    }
     .columns { display: grid; grid-template-columns: minmax(220px, 1fr) 2fr; gap: 24px; }
-    .bar { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; } .bar .name { flex: 1; min-width: 0; margin: 0; }
+    .bar { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+    .bar .name { flex: 1; min-width: 0; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .field { display: flex; flex-direction: column; gap: 4px; margin: 8px 0; }
     .actions, .pick, .tools, .delay, .controls, .seg { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
     .delay-row { flex-wrap: nowrap; } .delay-row .delay { flex: 1; min-width: 0; flex-wrap: nowrap; gap: 4px; }
@@ -1356,7 +1364,7 @@ class ResidentScenesCard extends LitElement {
       background: rgba(0, 0, 0, .4); border-radius: inherit; padding: 16px; box-sizing: border-box; }
     .dialog { background: var(--ha-card-background, var(--card-background-color, #fff)); border-radius: 12px; padding: 16px;
       width: 100%; max-width: 400px; box-sizing: border-box; position: sticky; top: 16px; }
-    .image-btn { position: relative; padding: 0; border: none; flex: none; }
+    .image-btn { position: relative; padding: 0; border: none; flex: none; display: flex; }
     .image-btn .pencil { position: absolute; right: 4px; bottom: 4px; width: 28px; height: 28px; border-radius: 50%; display: flex;
       align-items: center; justify-content: center; background: var(--primary-color); color: var(--text-primary-color, #fff); }
     .crop canvas { width: 100%; max-width: 320px; aspect-ratio: 1; border-radius: 8px; background: var(--secondary-background-color); }

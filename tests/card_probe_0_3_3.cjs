@@ -165,8 +165,8 @@ const light = (id, state, attributes) => ({ entity_id: id, name: id, state, attr
     assert.ok(head.querySelector('.title [data-action="play"]')); // FIXED: the buttons right of the image
     assert.match(rule(".hero"), /width:\s*80px;\s*height:\s*80px/); // FIXED
     assert.match(rule(".hero"), /aspect-ratio:\s*1;[^}]*object-fit:\s*cover/); // FIXED: the image fills the square
-    assert.match(rule(".head"), /max-height:\s*200px/); // FIXED
-    assert.match(css, /@container \(width >= 600px\) \{ \.head \{ max-height: 120px; \} \}/); // FIXED
+    // AA1 (0.3.5): narrow heads put the buttons in a row of their own and need no max-height; wide heads keep 120 px
+    assert.match(css, /@container \(width >= 600px\) \{\s*\.head \{ flex-wrap: nowrap; max-height: 120px; \}/); // FIXED
     // edit mode: the head image carries a pencil and opens the image choice; no field with a preview of its own
     await click(root, '[data-action="edit"]');
     assert.ok(q(root, '.bar [data-action="image"] img.hero')); // FIXED

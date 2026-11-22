@@ -731,7 +731,7 @@
   });
 
   // src/resident-scenes-card.js
-  var VERSION = "0.3.4";
+  var VERSION = "0.3.5";
   var WS = "resident_scenes";
   var HOUSE = "_house";
   var DOMAINS = ["light", "cover", "climate", "switch", "fan", "media_player", "scene"];
@@ -1293,8 +1293,7 @@
             ${full ? b2`<p class="muted">${this._t("err.limit_reached")} (${d3.limit})</p>` : A}` : A}
       ${manage && d3.manages_rights ? b2`<button class="wide" data-action="rights" @click=${this._openRights}>${this._t("rights")}</button>` : A}
       ${favs.length ? b2`<h3>${this._t("favorites")}</h3>${favs.map(row)}` : A}
-      <h3>${this._t("scenes")}</h3>
-      ${rest.length ? rest.map(row) : favs.length ? A : b2`<p class="muted">${this._t("empty")}</p>`}
+      ${rest.length ? b2`<h3>${this._t("scenes")}</h3>${rest.map(row)}` : favs.length ? A : b2`<h3>${this._t("scenes")}</h3><p class="muted">${this._t("empty")}</p>`}
       ${d3.foreign_scenes.length ? b2`<h3>${this._t("other_scenes")}</h3>
             ${d3.foreign_scenes.map(
         (s5) => b2`<div class="row">
@@ -1781,11 +1780,12 @@
       };
       const power = (send) => this._switch("on", on, this._t("on"), (o5) => o5 ? send() : off(), eid);
       if (dev.domain === "light") {
-        const plain = on && v3.white && c5.white_mode;
+        const unset = !on || !source.attributes?.color_mode && v3.color_temp_kelvin == null && v3.hue == null;
+        const plain = !!c5.white_mode && (on && !!v3.white || unset && v3.hue == null && v3.color_temp_kelvin == null);
         const white = !plain && c5.color_temp && (!c5.color || v3.hue == null);
         const kelvin = v3.color_temp_kelvin ?? c5.min_kelvin ?? 2700;
         const colour = (patch) => set({ hue: v3.hue ?? 30, saturation: v3.saturation ?? 100, ...patch });
-        const shown = !on || !source.attributes?.color_mode && v3.color_temp_kelvin == null && v3.hue == null ? white ? { color_temp_kelvin: kelvin } : c5.color && !plain ? { hue: v3.hue ?? 30, saturation: v3.saturation ?? 100 } : {} : {};
+        const shown = unset ? plain ? { white: true } : white ? { color_temp_kelvin: kelvin } : c5.color ? { hue: v3.hue ?? 30, saturation: v3.saturation ?? 100 } : {} : {};
         const keep = (values) => set({ ...shown, ...values });
         const modes = [
           ...c5.white_mode ? [["white_channel", this._t("white_channel")]] : [],
@@ -2051,14 +2051,20 @@
       background: var(--secondary-background-color); display: inline-flex; align-items: center; justify-content: center;
       color: var(--secondary-text-color); }
     .hero svg { width: 40px; height: 40px; }
-    .head { display: flex; align-items: center; gap: 12px; max-height: 200px; }
-    .head .title { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 0 8px; }
-    .head h2 { flex: 1 1 12em; min-width: 0; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
-    .head .tools { display: flex; flex-wrap: wrap; gap: 8px; }
+    .head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+    .head .title { display: contents; }
+    .head h2 { flex: 1 1 0; min-width: 0; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+    .head .tools { display: flex; flex-wrap: wrap; gap: 8px; flex: 1 1 100%; }
     .col-detail { container-type: inline-size; }
-    @container (width >= 600px) { .head { max-height: 120px; } }
+    /* narrow: the buttons take a full-width row under image and name, 80 + 8 + 44 (+ 8 + 44) px (review AA1) */
+    @container (width >= 600px) {
+      .head { flex-wrap: nowrap; max-height: 120px; }
+      .head .title { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 0 8px; }
+      .head h2 { flex: 1 1 12em; } .head .tools { flex: initial; }
+    }
     .columns { display: grid; grid-template-columns: minmax(220px, 1fr) 2fr; gap: 24px; }
-    .bar { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; } .bar .name { flex: 1; min-width: 0; margin: 0; }
+    .bar { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+    .bar .name { flex: 1; min-width: 0; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .field { display: flex; flex-direction: column; gap: 4px; margin: 8px 0; }
     .actions, .pick, .tools, .delay, .controls, .seg { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
     .delay-row { flex-wrap: nowrap; } .delay-row .delay { flex: 1; min-width: 0; flex-wrap: nowrap; gap: 4px; }
@@ -2096,7 +2102,7 @@
       background: rgba(0, 0, 0, .4); border-radius: inherit; padding: 16px; box-sizing: border-box; }
     .dialog { background: var(--ha-card-background, var(--card-background-color, #fff)); border-radius: 12px; padding: 16px;
       width: 100%; max-width: 400px; box-sizing: border-box; position: sticky; top: 16px; }
-    .image-btn { position: relative; padding: 0; border: none; flex: none; }
+    .image-btn { position: relative; padding: 0; border: none; flex: none; display: flex; }
     .image-btn .pencil { position: absolute; right: 4px; bottom: 4px; width: 28px; height: 28px; border-radius: 50%; display: flex;
       align-items: center; justify-content: center; background: var(--primary-color); color: var(--text-primary-color, #fff); }
     .crop canvas { width: 100%; max-width: 320px; aspect-ratio: 1; border-radius: 8px; background: var(--secondary-background-color); }

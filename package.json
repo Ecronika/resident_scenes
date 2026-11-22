@@ -4,7 +4,7 @@
   "license": "Apache-2.0",
   "scripts": {
     "build": "esbuild src/resident-scenes-card.js --bundle --format=iife --target=es2021 --legal-comments=inline --banner:js=\"// Built from src/resident-scenes-card.js by npm run build, do not edit.\" --outfile=custom_components/resident_scenes/frontend/resident-scenes-card.js",
-    "test": "node tests/card.test.cjs && node tests/card_probe_0_2_0.cjs && node tests/card_probe_0_2_1.cjs && node tests/card_probe_0_3_0.cjs && node tests/card_probe_0_3_1.cjs && node tests/card_probe_0_3_2.cjs && node tests/card_probe_0_3_3.cjs"
+    "test": "node tests/card.test.cjs && node tests/card_probe_0_2_0.cjs && node tests/card_probe_0_2_1.cjs && node tests/card_probe_0_3_0.cjs && node tests/card_probe_0_3_1.cjs && node tests/card_probe_0_3_2.cjs && node tests/card_probe_0_3_3.cjs && node tests/card_probe_0_3_4.cjs"
   },
   "devDependencies": {
     "esbuild": "0.28.2",

@@ -442,6 +442,8 @@ class SceneStore:
         scene = self._editable(msg["scene_id"], is_admin)  # again: inputs may have come during the check (W4)
         work = deepcopy(scene)
         result = getattr(self, f"_{command}")(work, msg, is_admin) or {}
+        if work == scene:  # an input that changes nothing begins no edit and keeps the undo state (review AA4)
+            return scene, False, result
         began = self._apply(scene, work, msg["edit"], user_id)
         # the entity id stays from now on once the edit that created the scene is over: a new edit of its creator,
         # any edit after it went idle, or its own id after it went idle (that input begins a new edit, review Z1);
