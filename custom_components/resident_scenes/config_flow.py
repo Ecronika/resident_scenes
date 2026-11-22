@@ -35,9 +35,11 @@ from .const import (
     CONF_NAME_LENGTH,
     CONF_PANEL_USERS,
     CONF_PANELS_WITH_EDIT,
+    CONF_ROOMS,
     CONF_SCENES_PER_AREA,
     CONF_STEPS_PER_SCENE,
     CONF_USERS_WITHOUT_EDIT,
+    CONF_USERS_WITHOUT_HOUSE,
     DEFAULTS,
     DOMAIN,
 )
@@ -95,8 +97,11 @@ class ResidentScenesOptionsFlow(OptionsFlow):
             if not inside_config(self.hass, user_input[CONF_IMAGE_DIR]):
                 errors[CONF_IMAGE_DIR] = "outside_config"
             else:
+                # room rights are managed in the card and not part of this form (spec 3)
+                options = self.config_entry.options
+                kept = {k: options[k] for k in (CONF_ROOMS, CONF_USERS_WITHOUT_HOUSE) if k in options}
                 return self.async_create_entry(
-                    data={k: int(v) if k in LIMITS else v for k, v in user_input.items()}
+                    data=kept | {k: int(v) if k in LIMITS else v for k, v in user_input.items()}
                 )
         users = [
             SelectOptionDict(value=u.id, label=u.name or u.id)

@@ -18,7 +18,7 @@ from homeassistant.helpers.typing import ConfigType
 from .const import CARD_URL, CONF_LABEL, DOMAIN, EVENT_CHANGED, SIGNAL_CHANGED, VERSION
 from .http import ImageView, PhotoView, UploadView
 from .issues import async_delete_issues, async_follow_removals, async_track_issues
-from .model import ValidationError, can_edit, opt
+from .model import ValidationError, can_edit, may_edit, opt
 from .runner import SceneRunner
 from .store import SceneStore
 from .websocket import async_register
@@ -60,7 +60,11 @@ async def _async_capture(entity: Any, call: ServiceCall) -> None:
     scene = store.scenes[entity.unique_id]
     user = await hass.auth.async_get_user(call.context.user_id) if call.context.user_id else None
     # automations of the installer run without a user and are allowed (spec 4.9)
-    if user is not None and not (can_edit(store.entry, user) and store.editable(scene, user.is_admin)):
+    if user is not None and not (
+        can_edit(store.entry, user)
+        and store.editable(scene, user.is_admin)
+        and may_edit(hass, store.entry, user, scene["area_id"])  # room right (spec 3)
+    ):
         raise Unauthorized(context=call.context)
     try:
         scene = await store.async_capture(scene["id"], user.id if user else None)

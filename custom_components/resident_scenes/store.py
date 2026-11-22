@@ -31,6 +31,7 @@ from .const import (
     CONF_IMAGE_SIDE,
     CONF_MAX_DELAY,
     CONF_NAME_LENGTH,
+    CONF_ROOMS,
     CONF_SCENES_PER_AREA,
     CONF_STEPS_PER_SCENE,
     DOMAIN,
@@ -178,6 +179,7 @@ class SceneStore:
             for area_id in gone:
                 self._move_to_house(area_id)
             await self._async_commit()
+        self._drop_room_rights(set(areas.areas))
 
     @callback
     def async_listen(self) -> None:
@@ -191,8 +193,19 @@ class SceneStore:
         )
 
     async def _area_updated(self, event: Event[ar.EventAreaRegistryUpdatedData]) -> None:
-        if event.data["action"] == "remove" and self._move_to_house(event.data["area_id"]):
+        if event.data["action"] != "remove":
+            return
+        self._drop_room_rights(set(ar.async_get(self.hass).areas))
+        if self._move_to_house(event.data["area_id"]):
             await self._async_commit()
+
+    @callback
+    def _drop_room_rights(self, areas: set[str]) -> None:
+        """The room right of a deleted room goes (spec 3); a new room of the same id is not granted by it."""
+        rooms = opt(self.entry, CONF_ROOMS)
+        kept = {uid: [a for a in ids if a in areas] for uid, ids in rooms.items()}
+        if kept != rooms:
+            self.hass.config_entries.async_update_entry(self.entry, options={**self.entry.options, CONF_ROOMS: kept})
 
     async def _entity_updated(self, event: Event[er.EventEntityRegistryUpdatedData]) -> None:
         data = event.data

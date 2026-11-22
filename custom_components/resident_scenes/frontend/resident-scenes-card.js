@@ -731,7 +731,7 @@
   });
 
   // src/resident-scenes-card.js
-  var VERSION = "0.3.5";
+  var VERSION = "0.4.0";
   var WS = "resident_scenes";
   var HOUSE = "_house";
   var DOMAINS = ["light", "cover", "climate", "switch", "fan", "media_player", "scene"];
@@ -782,6 +782,11 @@
       all_closed: "All closed",
       all_house: "All in the house",
       rights_gone: "Your right to change scenes was withdrawn.",
+      no_access: "No access to this room",
+      room_gone: "Your access to this room was withdrawn.",
+      all_rooms: "All rooms",
+      house_right: "may run house scenes",
+      no_floor: "Rooms without floor",
       empty: "No scenes yet.",
       no_steps: "No steps yet.",
       no_devices: "No released devices.",
@@ -848,6 +853,7 @@
       scene: "Scenes",
       err: {
         unauthorized: "You may not change scenes.",
+        no_access: "No access to this room.",
         name_exists: "This name is taken.",
         invalid_name: "Name is empty or too long.",
         limit_reached: "Limit of scenes reached.",
@@ -914,6 +920,11 @@
       all_closed: "Alle zu",
       all_house: "Alle im Haus",
       rights_gone: "Ihr Recht, Szenen zu \xE4ndern, wurde entzogen.",
+      no_access: "Kein Zugriff auf diesen Raum",
+      room_gone: "Ihr Zugriff auf diesen Raum wurde entzogen.",
+      all_rooms: "Alle R\xE4ume",
+      house_right: "darf Haus-Szenen ausl\xF6sen",
+      no_floor: "R\xE4ume ohne Etage",
       empty: "Noch keine Szenen.",
       no_steps: "Noch keine Schritte.",
       no_devices: "Keine freigegebenen Ger\xE4te.",
@@ -980,6 +991,7 @@
       scene: "Szenen",
       err: {
         unauthorized: "Sie d\xFCrfen Szenen nicht \xE4ndern.",
+        no_access: "Kein Zugriff auf diesen Raum.",
         name_exists: "Dieser Name ist schon vergeben.",
         invalid_name: "Name fehlt oder ist zu lang.",
         limit_reached: "H\xF6chstzahl an Szenen erreicht.",
@@ -1165,6 +1177,14 @@
         return;
       }
       if (this._data.can_edit && this._notice === "rights_gone") this._notice = null;
+      if (this._data.access === false && (this._edit || this._selected)) {
+        this._edit = null;
+        this._selected = null;
+        this._detail = null;
+        this._slots = null;
+        this._notice = "room_gone";
+      }
+      if (this._data.access !== false && this._notice === "room_gone") this._notice = null;
       if (this._edit && !this._data.can_edit) {
         this._edit = null;
         this._notice = "rights_gone";
@@ -1183,11 +1203,14 @@
         if (this._edit?.open && !detail.sequence.some((s5) => s5.id === this._edit.open)) this._setEdit({ open: null });
       } catch (err) {
         if (err.code === "not_found") this._selected = null, this._detail = null, this._edit = null;
+        if (err.code === "no_access") await this._load();
       }
     }
     async _loadRights() {
       try {
-        this._rights = (await this.hass.callWS({ type: `${WS}/rights` })).accounts;
+        const r5 = await this.hass.callWS({ type: `${WS}/rights` });
+        this._roomInfo = r5;
+        this._rights = r5.accounts;
       } catch (err) {
         this._rights = null;
       }
@@ -1238,7 +1261,9 @@
       if (!this._config) return A;
       const outdated = this._data && this._data.version !== VERSION;
       let body = A;
-      if (this._data && this._config.view === "favorites") {
+      if (this._data?.access === false) {
+        body = b2`<p class="muted" role="status" data-hint="no_access">${this._t("no_access")}</p>`;
+      } else if (this._data && this._config.view === "favorites") {
         body = this._renderFavorites();
         if (body === A && !outdated) return A;
       } else if (this._data) body = this._renderManage();
@@ -1437,8 +1462,36 @@
         (a3) => b2`<div class="row">
           <span class="name">${a3.name} ${a3.kind === "panel" ? b2`<span class="badge">${this._t("panel")}</span>` : A}</span>
           ${this._switch("right", a3.can_edit, this._t("may_edit"), (on) => this._setRight(a3.user_id, on), a3.user_id)}
-        </div>`
+        </div>${this._renderRooms(a3.user_id)}`
       )}`;
+    }
+    // rooms of an account: "All rooms" or a tree of floor and room, and the house right (spec 3, stage 4)
+    _renderRooms(uid) {
+      const info = this._roomInfo;
+      const right = info?.room_rights?.[uid];
+      if (!right) return A;
+      const rooms = right.rooms;
+      const set = (next) => this._setRooms(uid, next, right.house);
+      const groups = [...info.floors.map((f3) => [f3.floor_id, f3.name]), [null, this._t("no_floor")]].map(([id, name]) => [id, name, info.areas.filter((a3) => (a3.floor_id ?? null) === id)]).filter(([, , areas]) => areas.length);
+      const toggle = (ids, on) => set(on ? [.../* @__PURE__ */ new Set([...rooms, ...ids])] : rooms.filter((r5) => !ids.includes(r5)));
+      return b2`<div class="rooms" data-user=${uid}>
+      ${this._switch("all_rooms", rooms === null, this._t("all_rooms"), (on) => set(on ? null : []), uid)}
+      ${rooms === null ? A : groups.map(([id, name, areas]) => {
+        const ids = areas.map((a3) => a3.area_id);
+        return b2`<div class="floor">
+          ${id ? this._switch("floor", ids.every((r5) => rooms.includes(r5)), name, (on) => toggle(ids, on), `${uid}:${id}`) : b2`<span class="muted">${name}</span>`}
+          ${areas.map((a3) => this._switch("room", rooms.includes(a3.area_id), a3.name, (on) => toggle([a3.area_id], on), `${uid}:${a3.area_id}`))}
+        </div>`;
+      })}
+      ${this._switch("house_right", right.house, this._t("house_right"), (on) => this._setRooms(uid, rooms, on), uid)}
+    </div>`;
+    }
+    async _setRooms(userId, rooms, house) {
+      try {
+        await this.hass.callWS({ type: `${WS}/set_rooms`, user_id: userId, rooms, house });
+      } finally {
+        await this._loadRights();
+      }
     }
     async _setRight(userId, canEdit) {
       try {
@@ -1517,6 +1570,11 @@
       try {
         return await this.hass.callWS({ type: `${WS}/${type}`, scene_id: e5.scene_id, edit: e5.id, ...fields });
       } catch (err) {
+        if (err.code === "no_access") {
+          this._drafts.clear();
+          await this._load();
+          return void 0;
+        }
         const detail = /^\w+: (.+)$/.exec(err.message ?? "")?.[1] ?? "";
         const named = /^[a-z_]+\.\S+$/.test(detail) ? this._name(detail) : detail;
         const caps = this._edit?.devices.find((d3) => d3.entity_id === fields.entity_id)?.capabilities ?? {};
@@ -2088,6 +2146,9 @@
       background: #fff; transition: transform .2s; }
     .switch[aria-checked=true] .track { background: var(--primary-color); }
     .switch[aria-checked=true] .track::after { transform: translateX(18px); }
+    .rooms { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding: 0 0 12px 16px; }
+    .rooms .floor { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding-left: 12px; }
+    .rooms .floor > :not(:first-child) { margin-left: 16px; }
     button.check { width: 44px; padding: 0; position: relative; flex: none; }
     button.check::after { content: ""; position: absolute; inset: 11px; border: 2px solid var(--secondary-text-color); border-radius: 4px; }
     button.check[aria-checked=true]::after { background: var(--primary-color); border-color: var(--primary-color); }

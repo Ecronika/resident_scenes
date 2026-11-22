@@ -44,7 +44,12 @@ def async_describe_events(
 
     @callback
     def describe_rights(event: Event) -> dict[str, Any]:
-        right = "may now edit scenes" if event.data["can_edit"] else "may no longer edit scenes"
+        data = event.data
+        if "can_edit" in data:
+            right = "may now edit scenes" if data["can_edit"] else "may no longer edit scenes"
+        else:  # room rights (spec 3): the account that made the change is the user of the context
+            rooms = "all rooms" if data["rooms"] is None else ", ".join(data["rooms"]) or "no room"
+            right = f"rooms: {rooms}; " + ("may run house scenes" if data["house"] else "may not run house scenes")
         return {LOGBOOK_ENTRY_NAME: event.data["user"], LOGBOOK_ENTRY_MESSAGE: right}
 
     async_describe_event(DOMAIN, EVENT_RIGHTS, describe_rights)

@@ -24,6 +24,8 @@ Version 0.3 can:
 - installer scenes (protected, content can be released to residents), loaded from a template
 - edit right for every account that may control devices (not read-only accounts); the installer or a main user can
   withdraw it per account in the card; panel accounts have no edit right by default
+- room rights per account: "All rooms" or a selection of rooms, and the right to run house scenes (default: all rooms,
+  house scenes allowed)
 - undo of the last edit (all inputs from opening the editor to leaving it)
 - device release via a label; locks, alarm panels and configuration entities are never accepted
 - logbook entries for every change, attributed to the account; repair issues for missing devices and scenes.
@@ -109,6 +111,17 @@ user control every entity. This integration controls who changes scenes, not who
 
 Main users manage the edit right of residents and panels in the card. Admins and main users always may edit and are
 not listed there.
+
+**Room rights** (from 0.4.0): in "Permissions" the installer or a main user limits a resident or panel account to rooms,
+as "All rooms" or a tree of floor and room (a tick at the floor sets all its rooms), and switches "may run house scenes".
+A limited account sees, runs and (with edit right) changes only the scenes and favorite slots of its rooms; the card of
+another room shows "No access to this room". With the house right it sees and runs the house scenes and the house slots;
+a house scene runs fully, also in rooms the account has no right for. Changing house scenes and house slots needs all
+rooms. A new room is there at once for accounts with all rooms, for limited accounts only once ticked; a deleted room
+drops its right. Calls without a user (automations, schedules, KNX push buttons) run every scene. Changes apply at once,
+also to an open editor (its next input is rejected), and are written to the logbook with both accounts. If Home
+Assistant itself limits an account to some devices, a room counts only if the account may control each released device
+of it. Room rights order scenes; they do not lock devices: Home Assistant still lets a user switch any entity it allows.
 
 Images are delivered only to logged-in accounts or via signed, expiring URLs. Uploaded images are re-encoded on the
 server without metadata (no location, no time) and stored in `.storage/resident_scenes_images/`.

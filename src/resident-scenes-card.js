@@ -4,7 +4,7 @@ import { LitElement, html, css, nothing } from "lit";
 import { live } from "lit/directives/live.js";
 import { repeat } from "lit/directives/repeat.js";
 
-const VERSION = "0.3.5"; // must match the integration (checked by tests)
+const VERSION = "0.4.0"; // must match the integration (checked by tests)
 const WS = "resident_scenes";
 const HOUSE = "_house";
 const DOMAINS = ["light", "cover", "climate", "switch", "fan", "media_player", "scene"];
@@ -25,7 +25,9 @@ const I18N = {
     volume: "Volume", call: "Run", missing: "Device missing", unavailable: "Not reachable", not_released: "Not released",
     other_area: "In another room", favorite_missing: "Favorite missing", scene_missing: "Scene missing",
     all_off: "All off", all_closed: "All closed", all_house: "All in the house",
-    rights_gone: "Your right to change scenes was withdrawn.", empty: "No scenes yet.", no_steps: "No steps yet.",
+    rights_gone: "Your right to change scenes was withdrawn.", no_access: "No access to this room",
+    room_gone: "Your access to this room was withdrawn.", all_rooms: "All rooms", house_right: "may run house scenes",
+    no_floor: "Rooms without floor", empty: "No scenes yet.", no_steps: "No steps yet.",
     no_devices: "No released devices.", confirm_delete: "Delete the scene “{name}” for good?", used_on: "Used by:",
     outside_note: "Automations and schedules using it will stop working.", yes: "Delete", no: "Keep", cancel: "Cancel",
     copy: "copy", reload: "A new version is installed. Please reload.", reload_btn: "Reload", house: "House", no_room: "No room", devices_n: "devices",
@@ -44,7 +46,7 @@ const I18N = {
     light: "Lights", cover: "Shading", climate: "Climate", switch: "Switches", fan: "Fans",
     media_player: "Music", scene: "Scenes",
     err: {
-      unauthorized: "You may not change scenes.", name_exists: "This name is taken.",
+      unauthorized: "You may not change scenes.", no_access: "No access to this room.", name_exists: "This name is taken.",
       invalid_name: "Name is empty or too long.", limit_reached: "Limit of scenes reached.",
       too_many_steps: "Too many steps or devices.", entity_not_allowed: "Not released for this scene:",
       entity_unavailable: "Not reachable, its state cannot be captured:",
@@ -68,7 +70,9 @@ const I18N = {
     favorite: "Favorit", volume: "Lautstärke", call: "Aufruf", missing: "Gerät fehlt", unavailable: "Nicht erreichbar",
     not_released: "Nicht freigegeben", other_area: "In anderem Raum", favorite_missing: "Favorit fehlt",
     scene_missing: "Szene fehlt", all_off: "Alle aus", all_closed: "Alle zu", all_house: "Alle im Haus",
-    rights_gone: "Ihr Recht, Szenen zu ändern, wurde entzogen.", empty: "Noch keine Szenen.",
+    rights_gone: "Ihr Recht, Szenen zu ändern, wurde entzogen.", no_access: "Kein Zugriff auf diesen Raum",
+    room_gone: "Ihr Zugriff auf diesen Raum wurde entzogen.", all_rooms: "Alle Räume", house_right: "darf Haus-Szenen auslösen",
+    no_floor: "Räume ohne Etage", empty: "Noch keine Szenen.",
     no_steps: "Noch keine Schritte.", no_devices: "Keine freigegebenen Geräte.",
     confirm_delete: "Die Szene „{name}“ endgültig löschen?", used_on: "Verwendet in:",
     outside_note: "Automationen und Zeitpläne damit wirken nicht mehr.", yes: "Löschen", no: "Behalten",
@@ -89,7 +93,7 @@ const I18N = {
     light: "Licht", cover: "Beschattung", climate: "Klima", switch: "Schalter", fan: "Lüfter",
     media_player: "Musik", scene: "Szenen",
     err: {
-      unauthorized: "Sie dürfen Szenen nicht ändern.", name_exists: "Dieser Name ist schon vergeben.",
+      unauthorized: "Sie dürfen Szenen nicht ändern.", no_access: "Kein Zugriff auf diesen Raum.", name_exists: "Dieser Name ist schon vergeben.",
       invalid_name: "Name fehlt oder ist zu lang.", limit_reached: "Höchstzahl an Szenen erreicht.",
       too_many_steps: "Zu viele Schritte oder Geräte.", entity_not_allowed: "Für diese Szene nicht freigegeben:",
       entity_unavailable: "Nicht erreichbar, der Zustand lässt sich nicht übernehmen:",
@@ -305,6 +309,15 @@ class ResidentScenesCard extends LitElement {
       return;
     }
     if (this._data.can_edit && this._notice === "rights_gone") this._notice = null; // review N7
+    // room right withdrawn (spec 5.6): leave scene and editor, the card shows only its hint
+    if (this._data.access === false && (this._edit || this._selected)) {
+      this._edit = null;
+      this._selected = null;
+      this._detail = null;
+      this._slots = null;
+      this._notice = "room_gone";
+    }
+    if (this._data.access !== false && this._notice === "room_gone") this._notice = null;
     // rights withdrawn while editing: back to the scene view, the server rejects inputs anyway
     if (this._edit && !this._data.can_edit) {
       this._edit = null;
@@ -325,12 +338,15 @@ class ResidentScenesCard extends LitElement {
       if (this._edit?.open && !detail.sequence.some((s) => s.id === this._edit.open)) this._setEdit({ open: null });
     } catch (err) {
       if (err.code === "not_found") (this._selected = null), (this._detail = null), (this._edit = null);
+      if (err.code === "no_access") await this._load();
     }
   }
 
   async _loadRights() {
     try {
-      this._rights = (await this.hass.callWS({ type: `${WS}/rights` })).accounts;
+      const r = await this.hass.callWS({ type: `${WS}/rights` });
+      this._roomInfo = r; // room rights, floors and rooms (stage 4)
+      this._rights = r.accounts;
     } catch (err) {
       this._rights = null;
     }
@@ -392,7 +408,9 @@ class ResidentScenesCard extends LitElement {
     if (!this._config) return nothing;
     const outdated = this._data && this._data.version !== VERSION;
     let body = nothing;
-    if (this._data && this._config.view === "favorites") {
+    if (this._data?.access === false) {
+      body = html`<p class="muted" role="status" data-hint="no_access">${this._t("no_access")}</p>`; // spec 5.5
+    } else if (this._data && this._config.view === "favorites") {
       body = this._renderFavorites();
       // empty slots stay invisible (spec 4.7), so does a card without any
       if (body === nothing && !outdated) return nothing;
@@ -641,8 +659,41 @@ class ResidentScenesCard extends LitElement {
         (a) => html`<div class="row">
           <span class="name">${a.name} ${a.kind === "panel" ? html`<span class="badge">${this._t("panel")}</span>` : nothing}</span>
           ${this._switch("right", a.can_edit, this._t("may_edit"), (on) => this._setRight(a.user_id, on), a.user_id)}
-        </div>`
+        </div>${this._renderRooms(a.user_id)}`
       )}`;
+  }
+
+  // rooms of an account: "All rooms" or a tree of floor and room, and the house right (spec 3, stage 4)
+  _renderRooms(uid) {
+    const info = this._roomInfo;
+    const right = info?.room_rights?.[uid];
+    if (!right) return nothing;
+    const rooms = right.rooms;
+    const set = (next) => this._setRooms(uid, next, right.house);
+    const groups = [...info.floors.map((f) => [f.floor_id, f.name]), [null, this._t("no_floor")]]
+      .map(([id, name]) => [id, name, info.areas.filter((a) => (a.floor_id ?? null) === id)])
+      .filter(([, , areas]) => areas.length);
+    const toggle = (ids, on) => set(on ? [...new Set([...rooms, ...ids])] : rooms.filter((r) => !ids.includes(r)));
+    return html`<div class="rooms" data-user=${uid}>
+      ${this._switch("all_rooms", rooms === null, this._t("all_rooms"), (on) => set(on ? null : []), uid)}
+      ${rooms === null ? nothing : groups.map(([id, name, areas]) => {
+        const ids = areas.map((a) => a.area_id);
+        return html`<div class="floor">
+          ${id ? this._switch("floor", ids.every((r) => rooms.includes(r)), name, (on) => toggle(ids, on), `${uid}:${id}`)
+            : html`<span class="muted">${name}</span>`}
+          ${areas.map((a) => this._switch("room", rooms.includes(a.area_id), a.name, (on) => toggle([a.area_id], on), `${uid}:${a.area_id}`))}
+        </div>`;
+      })}
+      ${this._switch("house_right", right.house, this._t("house_right"), (on) => this._setRooms(uid, rooms, on), uid)}
+    </div>`;
+  }
+
+  async _setRooms(userId, rooms, house) {
+    try {
+      await this.hass.callWS({ type: `${WS}/set_rooms`, user_id: userId, rooms, house });
+    } finally {
+      await this._loadRights();
+    }
   }
 
   async _setRight(userId, canEdit) {
@@ -730,6 +781,11 @@ class ResidentScenesCard extends LitElement {
     try {
       return await this.hass.callWS({ type: `${WS}/${type}`, scene_id: e.scene_id, edit: e.id, ...fields });
     } catch (err) {
+      if (err.code === "no_access") { // room right withdrawn during the edit (spec 5.6)
+        this._drafts.clear();
+        await this._load();
+        return undefined;
+      }
       const detail = /^\w+: (.+)$/.exec(err.message ?? "")?.[1] ?? "";
       const named = /^[a-z_]+\.\S+$/.test(detail) ? this._name(detail) : detail;
       const caps = this._edit?.devices.find((d) => d.entity_id === fields.entity_id)?.capabilities ?? {};
@@ -1350,6 +1406,9 @@ class ResidentScenesCard extends LitElement {
       background: #fff; transition: transform .2s; }
     .switch[aria-checked=true] .track { background: var(--primary-color); }
     .switch[aria-checked=true] .track::after { transform: translateX(18px); }
+    .rooms { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding: 0 0 12px 16px; }
+    .rooms .floor { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding-left: 12px; }
+    .rooms .floor > :not(:first-child) { margin-left: 16px; }
     button.check { width: 44px; padding: 0; position: relative; flex: none; }
     button.check::after { content: ""; position: absolute; inset: 11px; border: 2px solid var(--secondary-text-color); border-radius: 4px; }
     button.check[aria-checked=true]::after { background: var(--primary-color); border-color: var(--primary-color); }

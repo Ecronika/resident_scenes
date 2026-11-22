@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.4.0
+
+Stage 4 of the functional spec: room rights per account (draft 0.13, sections 3, 4.4, 4.7, 5.5, 5.6).
+
+- Room rights: per account "All rooms" or a selection, and the right "house scenes"; default all rooms and on, so an
+  update changes nothing (no storage change, missing options mean all rooms). Stored in the options like the edit right.
+- Checks in every command: list, scene, devices, inputs, create, duplicate, delete, undo, favorite slots, `capture` and
+  the upload; a limited account gets only what it may see. Changing house scenes and house slots needs all rooms.
+- Running: `scene.turn_on` with a user needs the room right of the scene, a house scene the house right; refused calls
+  raise `Unauthorized` and are written to the logbook. Calls without a user always run; a house scene runs fully.
+- Control right per device: Home Assistant's control right is checked per released device instead of for all entities;
+  a room counts only if the account may control each released device of it.
+- A deleted room drops its right (also when deleted while Home Assistant was stopped); a new room is not granted to
+  limited accounts.
+- Card: "Permissions" shows per account "All rooms" or a tree of floor and room and "may run house scenes" (new command
+  `set_rooms`, the rights list carries floors and rooms); a room card without right shows only "No access to this room";
+  the house card of a limited account runs scenes without edit, new scene and heart; a right withdrawn while editing
+  rejects the next input, shows a hint and then the no-access hint.
+- Logbook: every change of room rights with the account changed and the account that made it.
+- The installer's settings form keeps the room rights.
+- Tests: `test_stage4.py`, card probe `card_probe_0_4_0.cjs`; the 0.3.5 review files `test_review_0_3_5.py` and
+  `card_probe_0_3_5.cjs` are added.
+
 ## 0.3.5
 
 Fixes of the 0.3.4 review.

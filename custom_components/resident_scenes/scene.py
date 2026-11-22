@@ -3,19 +3,24 @@
 from __future__ import annotations
 
 from datetime import timedelta
+import logging
 from typing import Any
 
+from homeassistant.auth.permissions.const import POLICY_CONTROL
 from homeassistant.components.scene import Scene
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.exceptions import Unauthorized
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.event import async_track_time_interval
 
 from . import ResidentScenesConfigEntry
-from .const import DOMAIN, SIGNAL_CHANGED
-from .model import entries
+from .const import DOMAIN, EVENT_CHANGED, SIGNAL_CHANGED
+from .model import entries, may_see
 from .store import SceneStore
+
+_LOGGER = logging.getLogger(__name__)
 
 PARALLEL_UPDATES = 0
 PICTURE_REFRESH = timedelta(hours=12)  # signed picture URLs live one day
@@ -122,5 +127,20 @@ class ResidentScene(Scene):
             registry.async_update_entity(self.entity_id, area_id=self._scene["area_id"])
 
     async def async_activate(self, **kwargs: Any) -> None:
-        """Run the scene."""
-        await self.store.runner.async_run(self._attr_unique_id, self._context)
+        """Run the scene; a call with a user needs the room right, or for a house scene the house right (spec 4.4).
+
+        Calls without a user (automations, schedules, KNX push buttons) always run. A house scene runs
+        fully, also its steps in rooms the user has no right for.
+        """
+        context, scene = self._context, self._scene
+        user = await self.hass.auth.async_get_user(context.user_id) if context and context.user_id else None
+        if user is not None and not may_see(self.hass, self.store.entry, user, scene["area_id"]):
+            _LOGGER.warning("Scene %s not run: %s has no right for its room", scene["name"], user.name)
+            self.hass.bus.async_fire(
+                EVENT_CHANGED,
+                {"scene_id": scene["id"], "name": scene["name"], "action": "not run: no right for its room",
+                 "entity_id": self.entity_id},
+                context=context,
+            )
+            raise Unauthorized(context=context, entity_id=self.entity_id, permission=POLICY_CONTROL)
+        await self.store.runner.async_run(self._attr_unique_id, context)

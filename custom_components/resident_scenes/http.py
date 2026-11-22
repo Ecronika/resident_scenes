@@ -11,7 +11,7 @@ from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
 
 from .const import CONF_IMAGE_KB, DOMAIN, IMAGE_URL, PHOTO_URL, UPLOAD_URL
-from .model import ValidationError, can_edit, opt
+from .model import ValidationError, can_edit, opt, room_list
 from .store import SceneStore, image_dir, upload_dir, valid_image_name, valid_upload_id
 
 MAX_REQUEST = 4 * 1024 * 1024  # the card shrinks images before upload; this is just a stop
@@ -74,7 +74,8 @@ class UploadView(HomeAssistantView):
         """Store an uploaded image (field 'file') and return its image name and URL."""
         hass = request.app[KEY_HASS]
         store = _store(hass)
-        if not can_edit(store.entry, request[KEY_HASS_USER]):
+        user = request[KEY_HASS_USER]
+        if not can_edit(store.entry, user) or room_list(store.entry, user) == []:  # no room: nothing to edit
             return self.json_message("No permission to edit scenes", HTTPStatus.FORBIDDEN, "unauthorized")
         if (request.content_length or 0) > MAX_REQUEST:
             return self.json_message("Too large", HTTPStatus.REQUEST_ENTITY_TOO_LARGE, "image_too_large")

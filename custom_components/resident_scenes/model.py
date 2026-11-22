@@ -20,7 +20,9 @@ from .const import (
     CONF_MAIN_USERS,
     CONF_PANEL_USERS,
     CONF_PANELS_WITH_EDIT,
+    CONF_ROOMS,
     CONF_USERS_WITHOUT_EDIT,
+    CONF_USERS_WITHOUT_HOUSE,
     DEFAULTS,
     DOMAIN,
     MUSIC_PLATFORMS,
@@ -63,31 +65,74 @@ def opt(entry: ConfigEntry, key: str) -> Any:
     return entry.options.get(key, DEFAULTS[key])
 
 
-def can_control(user: User) -> bool:
-    """Return whether the account is an active person that may control devices."""
-    return (
-        user.is_active
-        and not user.system_generated
-        and user.permissions.access_all_entities(POLICY_CONTROL)
+def can_control(user: User, entry: ConfigEntry | None = None) -> bool:
+    """Return whether the account is an active person that may control devices.
+
+    Checked per device (spec 3): an account Home Assistant limits to some areas controls their devices.
+    """
+    if not user.is_active or user.system_generated:
+        return False
+    if user.permissions.access_all_entities(POLICY_CONTROL):
+        return True
+    store = getattr(entry, "runtime_data", None)
+    return store is not None and any(
+        user.permissions.check_entity(eid, POLICY_CONTROL) for eid in allowed_entities(store.hass, entry)
     )
 
 
 def is_main_user(entry: ConfigEntry, user: User) -> bool:
     """Return whether the account manages edit rights (admins and main users)."""
-    return user.is_admin or (can_control(user) and user.id in opt(entry, CONF_MAIN_USERS))
+    return user.is_admin or (can_control(user, entry) and user.id in opt(entry, CONF_MAIN_USERS))
 
 
 def can_edit(entry: ConfigEntry, user: User) -> bool:
     """Return whether the user may change scenes (default: yes, panels: no)."""
     if user.is_admin:
         return True
-    if not can_control(user):  # read-only accounts may neither change nor run scenes
+    if not can_control(user, entry):  # read-only accounts may neither change nor run scenes
         return False
     if user.id in opt(entry, CONF_MAIN_USERS):
         return True
     if user.id in opt(entry, CONF_PANEL_USERS):
         return user.id in opt(entry, CONF_PANELS_WITH_EDIT)
     return user.id not in opt(entry, CONF_USERS_WITHOUT_EDIT)
+
+
+def room_list(entry: ConfigEntry, user: User) -> list[str] | None:
+    """Return the rooms an account is limited to, None for all rooms (default; admins and main users always)."""
+    return None if is_main_user(entry, user) else opt(entry, CONF_ROOMS).get(user.id)
+
+
+def _controls(hass: HomeAssistant, entry: ConfigEntry, user: User, area_id: str | None = "*") -> bool:
+    """Return whether the account may control each released device of a room ("*": of the whole house)."""
+    perms = user.permissions
+    if perms.access_all_entities(POLICY_CONTROL):
+        return True
+    return all(
+        perms.check_entity(eid, POLICY_CONTROL)
+        for eid, ent in allowed_entities(hass, entry).items()
+        if area_id == "*" or entity_area(hass, ent) == area_id
+    )
+
+
+def may_see(hass: HomeAssistant, entry: ConfigEntry, user: User, area_id: str | None) -> bool:
+    """Return whether an account sees and runs the scenes of a room, or with area None the house scenes (spec 3).
+
+    A room counts when the account has its room right and may control the room's devices.
+    """
+    if area_id is None:
+        return is_main_user(entry, user) or user.id not in opt(entry, CONF_USERS_WITHOUT_HOUSE)
+    rooms = room_list(entry, user)
+    return (rooms is None or area_id in rooms) and _controls(hass, entry, user, area_id)
+
+
+def may_edit(hass: HomeAssistant, entry: ConfigEntry, user: User, area_id: str | None) -> bool:
+    """Return whether an account changes the scenes and slots of a room; the house's need all rooms (spec 3)."""
+    if not can_edit(entry, user):
+        return False
+    if area_id is None:
+        return room_list(entry, user) is None and _controls(hass, entry, user)
+    return may_see(hass, entry, user, area_id)
 
 
 def allowed_entities(

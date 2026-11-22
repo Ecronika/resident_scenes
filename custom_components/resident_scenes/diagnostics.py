@@ -7,10 +7,25 @@ from typing import Any
 from homeassistant.core import HomeAssistant
 
 from . import ResidentScenesConfigEntry
-from .const import CONF_MAIN_USERS, CONF_PANEL_USERS, CONF_PANELS_WITH_EDIT, CONF_USERS_WITHOUT_EDIT, VERSION
+from .const import (
+    CONF_MAIN_USERS,
+    CONF_PANEL_USERS,
+    CONF_PANELS_WITH_EDIT,
+    CONF_ROOMS,
+    CONF_USERS_WITHOUT_EDIT,
+    CONF_USERS_WITHOUT_HOUSE,
+    VERSION,
+)
 from .model import entries
 
-USER_KEYS = (CONF_MAIN_USERS, CONF_PANEL_USERS, CONF_PANELS_WITH_EDIT, CONF_USERS_WITHOUT_EDIT)
+USER_KEYS = (
+    CONF_MAIN_USERS,
+    CONF_PANEL_USERS,
+    CONF_PANELS_WITH_EDIT,
+    CONF_USERS_WITHOUT_EDIT,
+    CONF_ROOMS,
+    CONF_USERS_WITHOUT_HOUSE,
+)
 
 
 async def async_get_config_entry_diagnostics(

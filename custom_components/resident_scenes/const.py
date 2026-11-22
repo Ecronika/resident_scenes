@@ -3,7 +3,7 @@
 from typing import Final
 
 DOMAIN: Final = "resident_scenes"
-VERSION: Final = "0.3.5"  # keep in sync with manifest.json and the card (checked by tests)
+VERSION: Final = "0.4.0"  # keep in sync with manifest.json and the card (checked by tests)
 
 STORAGE_KEY: Final = f"{DOMAIN}.data"
 STORAGE_VERSION: Final = 3
@@ -37,6 +37,8 @@ CONF_MAIN_USERS: Final = "main_users"
 CONF_PANEL_USERS: Final = "panel_users"
 CONF_USERS_WITHOUT_EDIT: Final = "users_without_edit"
 CONF_PANELS_WITH_EDIT: Final = "panels_with_edit"
+CONF_ROOMS: Final = "rooms"  # user id -> area ids; an account not listed has all rooms (spec 3)
+CONF_USERS_WITHOUT_HOUSE: Final = "users_without_house"
 CONF_SCENES_PER_AREA: Final = "scenes_per_area"
 CONF_HOUSE_SCENES: Final = "house_scenes"
 CONF_STEPS_PER_SCENE: Final = "steps_per_scene"
@@ -54,6 +56,8 @@ DEFAULTS: Final[dict[str, object]] = {
     CONF_PANEL_USERS: [],
     CONF_USERS_WITHOUT_EDIT: [],
     CONF_PANELS_WITH_EDIT: [],
+    CONF_ROOMS: {},
+    CONF_USERS_WITHOUT_HOUSE: [],
     CONF_SCENES_PER_AREA: 20,
     CONF_HOUSE_SCENES: 30,
     CONF_STEPS_PER_SCENE: 150,
