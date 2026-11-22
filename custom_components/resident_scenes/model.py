@@ -259,8 +259,14 @@ def _set_step(
             result |= {"color_mode": "color_temp", "color_temp_kelvin": int(kelvin)}
         elif hue is not None:
             result |= {"color_mode": "hs", "hs_color": [hue, 100 if saturation is None else saturation]}
+        elif values.get("white") is True:
+            if "white" not in (attrs.get("supported_color_modes") or []):
+                raise ValidationError("invalid_value", "white")
+            result["color_mode"] = "white"
         elif (attr := LIGHT_COLOR_ATTR.get(kept.get("color_mode"))) in kept:
             result |= {"color_mode": kept["color_mode"], attr: kept[attr]}
+        elif kept.get("color_mode") == "white":  # a new brightness keeps the white mode (review Z2)
+            result["color_mode"] = "white"
         return {"entity_id": entity_id, "state": "on", "attributes": result}
     if domain == "cover":
         position = _number(values, "position", 0, 100)

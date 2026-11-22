@@ -51,7 +51,7 @@ from .store import SceneStore
 type Connection = websocket_api.ActiveConnection
 
 VALUE_KEYS = ("brightness", "color_temp_kelvin", "hue", "saturation", "position", "tilt", "hvac_mode",
-              "temperature", "percentage", "on")
+              "temperature", "percentage", "on", "white")
 ENTRY_SCHEMA = {
     vol.Required("entity_id"): str,
     vol.Required("mode"): vol.In(["capture", "off", "set", "music"]),
@@ -235,6 +235,7 @@ def _capabilities(state: State | None) -> dict[str, Any]:
             "min_kelvin": attrs.get("min_color_temp_kelvin"),
             "max_kelvin": attrs.get("max_color_temp_kelvin"),
             "color": bool(modes & {"hs", "xy", "rgb", "rgbw", "rgbww"}),
+            "white_mode": "white" in modes,  # a white channel of its own, no colour (review Z2)
         }
     if state.domain == "cover":
         return {"position": "current_position" in attrs, "tilt": "current_tilt_position" in attrs}
@@ -347,16 +348,11 @@ def _input_command(name: str, fields: dict[Any, Any]):
         if (store := _editor(hass, connection, msg["id"])) is None:
             return
         user = connection.user
-        registry = er.async_get(hass)
-        before = registry.async_get_entity_id("scene", DOMAIN, msg["scene_id"])
         if (done := await _run(connection, msg, store.async_input(msg, user.id, user.is_admin))) is None:
             return
         scene, began, result = done
         if began:
             _changed(hass, connection, msg, scene, "changed")
-        if registry.async_get_entity_id("scene", DOMAIN, scene["id"]) != before:
-            # the id followed the name: "created" again under the id that holds now, for the scene's logbook (Y7)
-            _changed(hass, connection, msg, scene, "created")
         if live := result.pop("live", None):
             # live adjustment: the device follows the input, the same way a run applies it
             await store.runner.async_apply(scene, live, connection.context(msg))

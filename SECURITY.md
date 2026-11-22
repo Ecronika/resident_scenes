@@ -13,7 +13,7 @@ Do not open a public issue for them.
 | Rights | Installer scenes: residents change only released content; rename, move, image change and delete are refused, also through undo | ok, tested (review S4) |
 | Rights | Main users change the edit right of residents and panels only; admins and main users are not listed and cannot be changed | ok, tested (review S8) |
 | Rights | `capture`: Home Assistant resolves the targets and checks control rights; the integration checks the edit right per scene; automations without a user are allowed (spec 4.9) | ok, tested |
-| Input | Every input carries entity id, mode and checked values; target states are built by the server, never taken from the client; an input is checked on a copy of the scene and applied only if every check passes | ok, tested |
+| Input | Every input carries entity id, mode and checked values (the white mode only for lights that support it); target states are built by the server, never taken from the client; an input is checked on a copy of the scene and applied only if every check passes | ok, tested |
 | Input | Only entities with the label, in the allowed domains, not disabled, no configuration or diagnostic entities; locks and alarm panels never | ok, tested |
 | Input | A trade step takes devices of its room only, a step without a room devices without a room only; a stored entry of a moved device is marked "other room" and cannot be changed | ok, tested (review X3, X10) |
 | Input | "keep" keeps a stored step without checking the release again (rule B2): a device whose label was removed stays in the scene, is skipped when running and cannot be changed | by design, tested |

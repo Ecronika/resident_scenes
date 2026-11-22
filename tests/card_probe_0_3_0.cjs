@@ -169,12 +169,13 @@ const sent = (s, type) => s.calls.filter((c) => c.type === `resident_scenes/${ty
     card.remove();
   }
 
-  // ---------- the styles: targets of 44 px, the image is not cropped in the scene view ----------
+  // ---------- the styles: targets of 44 px, the scene image ----------
   {
     const css = w.customElements.get("resident-scenes-card").styles.cssText;
     assert.match(css, /button, input\[type=number\], input:not\(\[type\]\) \{ min-height: 44px/); // OK (5.7)
-    assert.match(css, /\.hero \{[^}]*aspect-ratio: 4 \/ 3; object-fit: contain/); // OK (V7)
-    assert.match(css, /\.thumb \{ width: 40px; height: 40px/); // NOTE: the list shows a 40 px square, cut from 4:3
+    // changed on purpose in 0.3.4 (draft 0.12, Z6): a square of 80 px in the scene view, no image in the list
+    assert.match(css, /\.hero \{ width: 80px; height: 80px; aspect-ratio: 1; object-fit: cover/);
+    assert.doesNotMatch(css, /\.thumb \{/);
   }
 
   console.log("card probe 0.3.0 passed");

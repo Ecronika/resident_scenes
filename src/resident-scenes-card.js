@@ -4,7 +4,7 @@ import { LitElement, html, css, nothing } from "lit";
 import { live } from "lit/directives/live.js";
 import { repeat } from "lit/directives/repeat.js";
 
-const VERSION = "0.3.3"; // must match the integration (checked by tests)
+const VERSION = "0.3.4"; // must match the integration (checked by tests)
 const WS = "resident_scenes";
 const HOUSE = "_house";
 const DOMAINS = ["light", "cover", "climate", "switch", "fan", "media_player", "scene"];
@@ -37,7 +37,7 @@ const I18N = {
     room_scene: "Room scene", remove: "Remove", open: "Open", add_step: "Add step", add_delay: "Add delay",
     pick_room: "Room", pick_domain: "Trade", stale: "Not up to date, retrying …",
     offline: "Connection lost. Editing is locked until it is back.", seconds: "Delay (s)",
-    no_room_scene: "No room scene any more", white: "White", colour: "Colour", saturation: "Saturation",
+    no_room_scene: "No room scene any more", white: "White", colour: "Colour", white_channel: "White", saturation: "Saturation",
     drag: "Drag to reorder, or use the arrow keys", moved: "Moved to position {n} of {m}.", more: "more",
     no_effect: "no effect", undone: "The previous state applies again.",
     no_favorites: "No favorites: none are stored in the music system, or its favorites sensor is disabled.",
@@ -50,7 +50,7 @@ const I18N = {
       entity_unavailable: "Not reachable, its state cannot be captured:",
       unknown_favorite: "This favorite no longer exists.", not_found: "The scene no longer exists.",
       invalid_step: "Invalid setting.", invalid_value: "Value out of range:", invalid_delay: "Delay out of range:",
-      invalid_temperature: "Temperature out of range:",
+      invalid_temperature: "Temperature out of range:", invalid_temperature_step: "Temperature not on the step of the device:",
       favorite_not_supported: "Favorites only work on players of the music system:",
       invalid_scene_call: "This scene cannot be called.", duplicate_entity: "Device used twice:",
       protected: "Installer scene: only its released content can be changed.", invalid_image: "Image not found.",
@@ -82,7 +82,7 @@ const I18N = {
     remove: "Entfernen", open: "Öffnen", add_step: "Schritt hinzufügen", add_delay: "Verzögerung hinzufügen",
     pick_room: "Raum", pick_domain: "Gewerk", stale: "Nicht aktuell, neuer Versuch läuft …",
     offline: "Verbindung unterbrochen. Der Editor ist gesperrt, bis sie zurück ist.", seconds: "Verzögerung (s)",
-    no_room_scene: "Keine Raumszene mehr", white: "Weiß", colour: "Farbe", saturation: "Sättigung",
+    no_room_scene: "Keine Raumszene mehr", white: "Weiß", colour: "Farbe", white_channel: "Weiß", saturation: "Sättigung",
     drag: "Ziehen zum Sortieren, oder Pfeiltasten", moved: "An Stelle {n} von {m} verschoben.", more: "weitere",
     no_effect: "ohne Wirkung", undone: "Der frühere Stand gilt wieder.",
     no_favorites: "Keine Favoriten: Im Musiksystem sind keine hinterlegt, oder sein Favoriten-Sensor ist abgeschaltet.",
@@ -95,7 +95,7 @@ const I18N = {
       entity_unavailable: "Nicht erreichbar, der Zustand lässt sich nicht übernehmen:",
       unknown_favorite: "Diesen Favoriten gibt es nicht mehr.", not_found: "Die Szene gibt es nicht mehr.",
       invalid_step: "Ungültige Einstellung.", invalid_value: "Wert außerhalb des Bereichs:",
-      invalid_delay: "Verzögerung außerhalb des Bereichs:", invalid_temperature: "Temperatur außerhalb des Bereichs:", favorite_not_supported: "Favoriten nur für Player des Musiksystems:",
+      invalid_delay: "Verzögerung außerhalb des Bereichs:", invalid_temperature: "Temperatur außerhalb des Bereichs:", invalid_temperature_step: "Temperatur passt nicht zur Schrittweite des Geräts:", favorite_not_supported: "Favoriten nur für Player des Musiksystems:",
       invalid_scene_call: "Diese Szene lässt sich nicht aufrufen.", duplicate_entity: "Gerät doppelt:",
       protected: "Errichterszene: nur der freigegebene Inhalt lässt sich ändern.", invalid_image: "Bild nicht gefunden.",
       invalid_image_file: "Das ist keine Bilddatei.", image_too_large: "Bild zu groß, Grenze:",
@@ -106,7 +106,7 @@ const I18N = {
   },
 };
 
-const TILE = { w: 640, h: 480 }; // tile format of the design system, 4:3
+const TILE = { w: 640, h: 640 }; // tile format: the square (spec 4.8)
 
 class ResidentScenesCard extends LitElement {
   _drafts = new Map(); // what the user is typing or dragging, kept over updates from the server (spec 5.6)
@@ -155,6 +155,11 @@ class ResidentScenesCard extends LitElement {
       this.updateComplete.then(() => this._fitLines()); // after a switch of the layout
     });
     this._ro.observe(this);
+    // a press beside the open list of favorites closes it (Z5)
+    this._outside ??= (ev) => {
+      if (this._edit?.favOpen && !ev.composedPath().some((n) => n.classList?.contains("favorites"))) this._setEdit({ favOpen: null });
+    };
+    window.addEventListener("click", this._outside);
     if (this.hass && !this._started) this._start();
   }
 
@@ -167,6 +172,7 @@ class ResidentScenesCard extends LitElement {
     this.hass?.connection.removeEventListener?.("ready", this._onReady);
     this.hass?.connection.removeEventListener?.("disconnected", this._onDown);
     this._ro?.disconnect();
+    window.removeEventListener("click", this._outside);
     this._unsubscribe();
   }
 
@@ -197,6 +203,10 @@ class ResidentScenesCard extends LitElement {
     for (const clip of this.renderRoot.querySelectorAll(".clip[data-fit]")) {
       const parts = clip.parts ?? [];
       const more = clip.nextElementSibling;
+      // measured once per text and width, not on every update (Z4); reading the width costs one layout per pass, not per row
+      const key = JSON.stringify([clip.parentElement.clientWidth, this._lang, parts]);
+      if (clip.fitted === key) continue;
+      clip.fitted = key;
       const show = (k) => {
         clip.textContent = parts.slice(0, k).join(", ");
         more.textContent = k === parts.length ? "" : k ? `+ ${parts.length - k} ${this._t("more")}` : `${parts.length} ${this._t("devices_n")}`;
@@ -436,7 +446,6 @@ class ResidentScenesCard extends LitElement {
     const favs = d.favorites.map((id) => this._scene(id)).filter(Boolean);
     const rest = this._scenes.filter((s) => !d.favorites.includes(s.id));
     const row = (s) => html`<div class="row ${this._selected === s.id ? "selected" : ""}">
-      ${s.image_url ? html`<img class="thumb" src=${s.image_url} alt="" />` : html`<span class="thumb">${PLACEHOLDER}</span>`}
       ${manage
         ? html`<button class="name link" data-action="select" data-id=${s.id} @click=${() => this._select(s.id)}>${s.name}</button>`
         : html`<span class="name">${s.name}</span>`}
@@ -458,7 +467,7 @@ class ResidentScenesCard extends LitElement {
       ${d.foreign_scenes.length
         ? html`<h3>${this._t("other_scenes")}</h3>
             ${d.foreign_scenes.map(
-              (s) => html`<div class="row"><span class="thumb">${PLACEHOLDER}</span>
+              (s) => html`<div class="row">
                 <span class="name">${this._name(s.entity_id, s.name)}${s.knx ? html`<span class="badge">KNX</span>` : nothing}</span>
                 ${this._playButton(s.entity_id, false, this._name(s.entity_id, s.name))}</div>`
             )}`
@@ -487,8 +496,10 @@ class ResidentScenesCard extends LitElement {
     const slot = d.favorites.indexOf(s.id);
     return html`${this._narrow ? html`<button data-action="back" @click=${this._back}>‹ ${this._t("back")}</button>` : nothing}
       <div class="head">
-        ${s.image_url ? html`<img class="hero" src=${s.image_url} alt="" />` : nothing}
+        ${this._hero(s)}
+        <div class="title">
         <h2>${s.name} ${s.kind === "installer" ? html`<span class="badge">${this._t("installer")}</span>` : nothing}</h2>
+        <div class="tools">
         ${this._playButton(s.entity_id, true)}
         ${d.can_edit
           ? html`<button data-action="heart" aria-label=${this._t("favorites")} aria-pressed=${slot >= 0 ? "true" : "false"}
@@ -500,12 +511,17 @@ class ResidentScenesCard extends LitElement {
         ${d.can_edit && s.editable && s.can_undo
           ? html`<button data-action="undo" @click=${this._undo}>${this._t("undo")}</button>`
           : nothing}
-      </div>
+      </div></div></div>
       ${this._detailError ? html`<p class="error" role="alert">${this._detailError}</p>` : nothing}
       <p class="muted" role="status">${this._undone ? this._t("undone") : nothing}</p>
       ${s.sequence.length
         ? html`<h3>${this._t("order")}</h3>${s.sequence.map((step, i) => html`<div class="row">${this._stepLine(step, i === s.sequence.length - 1)}</div>`)}`
         : html`<p class="muted">${this._t("no_steps")}</p>`}`;
+  }
+
+  // the scene image: a square of 80 px beside the name, the placeholder without one (spec 5.2, Z6)
+  _hero(s) {
+    return s.image_url ? html`<img class="hero" src=${s.image_url} alt="" />` : html`<span class="hero">${PLACEHOLDER}</span>`;
   }
 
   _stepTitle(step) {
@@ -772,6 +788,10 @@ class ResidentScenesCard extends LitElement {
       : [];
     return html`<div class="bar">
         <button class="icon" data-action="done-back" aria-label=${this._t("back")} @click=${this._done}>‹</button>
+        ${own // the head image opens the image choice, no second thumbnail (spec 5.2, Z6)
+          ? html`<button class="image-btn" data-action="image" aria-label=${this._t("choose_image")} aria-expanded=${e.picking ? "true" : "false"}
+              @click=${() => this._setEdit({ picking: !e.picking })}>${this._hero(s)}<span class="pencil" aria-hidden="true">✎</span></button>`
+          : nothing}
         <span class="name">${s.name}</span>
         <button class="primary" data-action="done" @click=${this._done}>${this._t("done")}</button>
       </div>
@@ -990,6 +1010,7 @@ class ResidentScenesCard extends LitElement {
     const domain = step.entity_id.split(".")[0];
     if (domain === "light") {
       const v = { brightness: a.brightness ?? 255 };
+      if (a.color_mode === "white") return { ...v, white: true }; // its own white channel, no colour (Z2)
       // a light in white mode reports a colour too: take the one of its colour mode
       if (a.color_temp_kelvin && (a.color_mode === "color_temp" || !a.hs_color)) v.color_temp_kelvin = a.color_temp_kelvin;
       else if (a.hs_color) Object.assign(v, { hue: a.hs_color[0], saturation: a.hs_color[1] });
@@ -1022,24 +1043,31 @@ class ResidentScenesCard extends LitElement {
     const power = (send) => this._switch("on", on, this._t("on"), (o) => (o ? send() : off()), eid);
     if (dev.domain === "light") {
       // an input sends only its own value, the server keeps the stored rest, e.g. an xy colour (spec 4.5, X11)
-      const white = c.color_temp && (!c.color || v.hue == null);
+      // the white mode of its own: a third state "Weiß" without sliders, kept by the server (Z2)
+      const plain = on && v.white && c.white_mode;
+      const white = !plain && c.color_temp && (!c.color || v.hue == null);
       const kelvin = v.color_temp_kelvin ?? c.min_kelvin ?? 2700;
       const colour = (patch) => set({ hue: v.hue ?? 30, saturation: v.saturation ?? 100, ...patch });
-      // no colour stored (the light is off): "An" and the first input store the colour shown as well (spec 4.5, Y1)
-      const shown = !on || (v.color_temp_kelvin == null && v.hue == null)
-        ? (white ? { color_temp_kelvin: kelvin } : c.color ? { hue: v.hue ?? 30, saturation: v.saturation ?? 100 } : {})
+      // no colour mode at all (the light is off): "An" and the first input store the colour shown as well (spec 4.5, Y1)
+      const shown = !on || (!source.attributes?.color_mode && v.color_temp_kelvin == null && v.hue == null)
+        ? (white ? { color_temp_kelvin: kelvin } : c.color && !plain ? { hue: v.hue ?? 30, saturation: v.saturation ?? 100 } : {})
         : {};
       const keep = (values) => set({ ...shown, ...values });
+      const modes = [
+        ...(c.white_mode ? [["white_channel", this._t("white_channel")]] : []),
+        ...(c.color_temp ? [["white", this._t(c.white_mode ? "color_temp" : "white")]] : []),
+        ...(c.color ? [["colour", this._t("colour")]] : []),
+      ];
+      const pick = { white_channel: () => set({ white: true }), white: () => set({ color_temp_kelvin: kelvin }), colour: () => colour({}) };
       return html`${power(() => keep({}))}
         ${c.brightness ? slider("brightness", "brightness", 1, 100, Math.round(v.brightness / 2.55), "%",
           (p) => keep({ brightness: Math.max(1, Math.round(p * 2.55)) })) : nothing}
-        ${c.color_temp && c.color
-          ? this._seg("light_mode", eid, [["white", this._t("white")], ["colour", this._t("colour")]], white ? "white" : "colour",
-              (m) => (m === "white" ? set({ color_temp_kelvin: kelvin }) : colour({})), !!entry)
+        ${modes.length > 1
+          ? this._seg("light_mode", eid, modes, plain ? "white_channel" : white ? "white" : "colour", (m) => pick[m](), !!entry)
           : nothing}
         ${white ? slider("color_temp_kelvin", "color_temp", c.min_kelvin ?? 2000, c.max_kelvin ?? 6500, kelvin, "K",
           (k) => set({ color_temp_kelvin: k })) : nothing}
-        ${c.color && !white
+        ${c.color && !white && !plain
           ? html`${slider("hue", "hue", 0, 360, v.hue ?? 30, "°", (h) => colour({ hue: h }))}
               ${slider("saturation", "saturation", 0, 100, v.saturation ?? 100, "%", (x) => colour({ saturation: x }))}`
           : nothing}`;
@@ -1056,9 +1084,15 @@ class ResidentScenesCard extends LitElement {
       // a text field: no arrows of the browser (X8); "21,5" is read like "21.5", the range is named like the delay's (Y4)
       const typed = (ev) => {
         const value = Number(ev.target.value.trim().replace(",", "."));
-        if (ev.target.value.trim() && value >= (c.min_temp ?? 5) && value <= (c.max_temp ?? 35)) return send({ temperature: value });
+        const min = c.min_temp ?? 5;
+        const step = c.temp_step ?? 0.5;
+        const inside = ev.target.value.trim() && value >= min && value <= (c.max_temp ?? 35);
+        // on the step of the device, counted from its minimum (Z5)
+        const onStep = Math.abs((value - min) / step - Math.round((value - min) / step)) < 1e-6;
+        if (inside && onStep) return send({ temperature: value });
         this._drafts.delete(key);
-        this._setEdit({ error: "invalid_temperature", errorDetail: this._tempRange(c) });
+        this._setEdit(inside ? { error: "invalid_temperature_step", errorDetail: `${this._num(step)} ${this._unit}` }
+          : { error: "invalid_temperature", errorDetail: this._tempRange(c) });
       };
       return html`${this._seg("hvac_mode", eid, (c.hvac_modes ?? []).map((m) => [m, this._state(eid, m)]), v.hvac_mode,
           (m) => send({ hvac_mode: m }), !!entry)}
@@ -1137,10 +1171,8 @@ class ResidentScenesCard extends LitElement {
     const e = this._edit;
     const s = this._detail;
     const crop = e.crop;
-    return html`<div class="field"><span>${this._t("image")}</span>
-      <button class="image-btn" data-action="image" @click=${() => this._setEdit({ picking: !e.picking })}>
-        ${s.image_url ? html`<img src=${s.image_url} alt="" />` : html`<span class="thumb">${PLACEHOLDER}</span>`}
-        <span>${this._t("choose_image")}</span></button>
+    if (!e.picking && !crop) return nothing;
+    return html`<div class="field">
       ${e.picking
         ? html`<div class="tiles">
             <button class="tile" data-action="pick-image" data-name="" @click=${() => this._pickImage(null)}>
@@ -1275,11 +1307,16 @@ class ResidentScenesCard extends LitElement {
     .name .line { display: flex; gap: 4px; align-items: center; min-width: 0; overflow: hidden; white-space: nowrap; }
     .line .clip { min-width: 0; overflow: hidden; text-overflow: ellipsis; } .line .more, .line .badge { flex: none; }
     .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); margin: 0; }
-    .thumb { width: 40px; height: 40px; border-radius: 6px; object-fit: cover; background: var(--secondary-background-color); flex: none;
-      display: inline-flex; align-items: center; justify-content: center; color: var(--secondary-text-color); }
-    .thumb svg { width: 24px; height: 24px; }
-    .hero { width: 100%; aspect-ratio: 4 / 3; object-fit: contain; border-radius: 8px; }
-    .head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; } .head h2 { flex: 1 1 100%; }
+    .hero { width: 80px; height: 80px; aspect-ratio: 1; object-fit: cover; border-radius: 8px; flex: none; box-sizing: border-box;
+      background: var(--secondary-background-color); display: inline-flex; align-items: center; justify-content: center;
+      color: var(--secondary-text-color); }
+    .hero svg { width: 40px; height: 40px; }
+    .head { display: flex; align-items: center; gap: 12px; max-height: 200px; }
+    .head .title { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 0 8px; }
+    .head h2 { flex: 1 1 12em; min-width: 0; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+    .head .tools { display: flex; flex-wrap: wrap; gap: 8px; }
+    .col-detail { container-type: inline-size; }
+    @container (width >= 600px) { .head { max-height: 120px; } }
     .columns { display: grid; grid-template-columns: minmax(220px, 1fr) 2fr; gap: 24px; }
     .bar { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; } .bar .name { flex: 1; min-width: 0; margin: 0; }
     .field { display: flex; flex-direction: column; gap: 4px; margin: 8px 0; }
@@ -1319,17 +1356,19 @@ class ResidentScenesCard extends LitElement {
       background: rgba(0, 0, 0, .4); border-radius: inherit; padding: 16px; box-sizing: border-box; }
     .dialog { background: var(--ha-card-background, var(--card-background-color, #fff)); border-radius: 12px; padding: 16px;
       width: 100%; max-width: 400px; box-sizing: border-box; position: sticky; top: 16px; }
-    .image-btn { display: flex; align-items: center; gap: 12px; padding: 4px 12px 4px 4px; align-self: flex-start; }
-    .image-btn img { width: 64px; aspect-ratio: 4 / 3; object-fit: cover; border-radius: 6px; }
-    .crop canvas { width: 100%; max-width: 320px; aspect-ratio: 4 / 3; border-radius: 8px; background: var(--secondary-background-color); }
+    .image-btn { position: relative; padding: 0; border: none; flex: none; }
+    .image-btn .pencil { position: absolute; right: 4px; bottom: 4px; width: 28px; height: 28px; border-radius: 50%; display: flex;
+      align-items: center; justify-content: center; background: var(--primary-color); color: var(--text-primary-color, #fff); }
+    .crop canvas { width: 100%; max-width: 320px; aspect-ratio: 1; border-radius: 8px; background: var(--secondary-background-color); }
     .handle { cursor: grab; touch-action: none; user-select: none; min-width: 44px; min-height: 44px; display: flex;
       align-items: center; justify-content: center; font-size: 1.4em; color: var(--secondary-text-color); border-radius: 8px; }
     .row.drop { outline: 2px dashed var(--primary-color); }
     .tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 12px; }
-    .tile { position: relative; aspect-ratio: 4 / 3; padding: 0; overflow: hidden; display: flex; align-items: flex-end; justify-content: center; }
+    .tile { position: relative; aspect-ratio: 1; padding: 0; overflow: hidden; display: flex; align-items: flex-end; justify-content: center; }
     .tile img, .tile svg { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
     .tile svg { padding: 25%; box-sizing: border-box; color: var(--secondary-text-color); }
-    .tile span { position: relative; width: 100%; padding: 8px; background: rgba(0,0,0,.45); color: #fff; text-align: left; }
+    .tile span { position: relative; width: 100%; padding: 24px 8px 8px; color: #fff; text-align: left; box-sizing: border-box;
+      background: linear-gradient(transparent, rgba(0, 0, 0, .7)); text-shadow: 0 1px 2px rgba(0, 0, 0, .8); }
   `;
 }
 

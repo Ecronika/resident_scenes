@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.3.4
+
+Fixes of the 0.3.3 review and draft 0.12 of the functional spec.
+
+- Entity id: the creating edit also ends when it went idle; an input with its edit id after ten minutes begins a new
+  edit, and the id no longer follows the name (Z1, spec 4.3, 4.5).
+- Light in its own white mode (`white`): the card shows a third state "White" without sliders and sends only the
+  brightness; the server keeps the mode on a new brightness and stores it when "White" is chosen. The colour shown is
+  sent along only when the source has no colour mode at all. Capabilities name `white_mode` (Z2).
+- Logbook: "scene created" is written once, under the first entity id; it is no longer repeated when the id follows the
+  name (Z3, spec 4.10). The README says so.
+- The row of a step is measured again only when its devices, the language or the width change (Z4).
+- The list of music favorites closes on a press beside it; the setpoint is checked against the step of the thermostat,
+  "Temperature not on the step of the device: 0.5 °C" (Z5).
+- Scene image after draft 0.12: no image or placeholder in the rows of the list; in the scene view a square of 80
+  pixels left of the name, the buttons beside it or in the line below, the head at most 200 pixels high (120 from a
+  column of 600 pixels); in edit mode the head image carries a pencil and opens the image choice, the field "Image"
+  with its own preview is gone; square tiles in the view "Favorites" and in the image choice, the name on a gradient;
+  crop and upload at 640 × 640. Stored images stay unchanged. The README names format and size for library images
+  (Z6, spec 4.8, 5.2).
+
 ## 0.3.3
 
 Fixes of the 0.3.2 review.

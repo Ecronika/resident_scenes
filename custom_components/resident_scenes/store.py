@@ -443,11 +443,14 @@ class SceneStore:
         work = deepcopy(scene)
         result = getattr(self, f"_{command}")(work, msg, is_admin) or {}
         began = self._apply(scene, work, msg["edit"], user_id)
-        # the entity id stays from now on once the edit that created the scene is over: a new edit of its creator
-        # or any edit after it went idle; another account's edit meanwhile does not end it (spec 4.3, review Y6)
+        # the entity id stays from now on once the edit that created the scene is over: a new edit of its creator,
+        # any edit after it went idle, or its own id after it went idle (that input begins a new edit, review Z1);
+        # another account's edit meanwhile does not end it (spec 4.3, review Y6)
         creating = work.get("creating_edit")
-        if [msg["edit"], user_id] != creating and (
-            creating not in [e[:2] for e in work["edits"]] or user_id == creating[1]
+        if (
+            began
+            if [msg["edit"], user_id] == creating
+            else creating not in [e[:2] for e in work["edits"]] or user_id == creating[1]
         ):
             work["entity_named"] = True
         if command == "update" and work["name"] != scene["name"]:

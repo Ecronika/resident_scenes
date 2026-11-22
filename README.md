@@ -26,7 +26,9 @@ Version 0.3 can:
   withdraw it per account in the card; panel accounts have no edit right by default
 - undo of the last edit (all inputs from opening the editor to leaving it)
 - device release via a label; locks, alarm panels and configuration entities are never accepted
-- logbook entries for every change, attributed to the account; repair issues for missing devices and scenes
+- logbook entries for every change, attributed to the account; repair issues for missing devices and scenes.
+  "scene created" is written once, under the first entity id (`scene.new_scene_1`); when the id then follows the name in
+  the creating edit, that entry stays under the first id
 
 ## Installation
 
@@ -37,7 +39,9 @@ Version 0.3 can:
    may use (on the entity or its device).
 4. For Sonos favorites enable the (disabled by default) Sonos favorites sensor.
 5. Optional: put images (`.jpg`, `.png`, `.webp`) in `<config>/resident_scenes/`. An image named after an area id
-   (e.g. `kitchen.jpg`) is the default image of that area.
+   (e.g. `kitchen.jpg`) is the default image of that area. Library images: square, 640 × 640 pixels, JPEG, PNG or
+   WebP, sRGB with 8 bits per channel, without location and time metadata (they are served unchanged). The card shows
+   every scene image as a square and crops other formats from the middle; more pixels only cost loading time.
 
 The card registers itself, no separate resource is needed.
 

@@ -130,7 +130,7 @@ async def test_entity_id_stops_following_when_a_second_account_edits(hass, setup
 
 
 async def test_y7_created_is_logged_under_the_id_that_holds(hass, setup, hass_ws_client, resident_token):
-    """Added for 0.3.3: once the id follows the name, "created" is written again under the new id (Y7)."""
+    """Added for 0.3.3 (Y7); changed on purpose in 0.3.4 (Z3): "created" is written once, under the first id."""
     changes = async_capture_events(hass, EVENT_CHANGED)
     call = await ws(hass, hass_ws_client, resident_token)
     sid = (await call(type=f"{DOMAIN}/create", area_id=None, name="Neue Szene", edit="c"))["result"]["scene_id"]
@@ -139,7 +139,7 @@ async def test_y7_created_is_logged_under_the_id_that_holds(hass, setup, hass_ws
     assert (await call(**cmd("update", sid, "c", transition=2)))["success"]  # no new id, nothing logged
     await hass.async_block_till_done()
     logged = [(c.data["action"], c.data["entity_id"], c.data["name"]) for c in changes]
-    assert logged == [("created", "scene.neue_szene_1", "Neue Szene 1"), ("created", "scene.abend", "Abend")]  # FIXED
+    assert logged == [("created", "scene.neue_szene_1", "Neue Szene 1")]  # FIXED in 0.3.4: one entry (spec 4.10, Z3)
 
 
 # ---------- points that hold ----------

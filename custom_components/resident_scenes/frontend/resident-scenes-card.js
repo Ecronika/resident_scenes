@@ -731,7 +731,7 @@
   });
 
   // src/resident-scenes-card.js
-  var VERSION = "0.3.3";
+  var VERSION = "0.3.4";
   var WS = "resident_scenes";
   var HOUSE = "_house";
   var DOMAINS = ["light", "cover", "climate", "switch", "fan", "media_player", "scene"];
@@ -831,6 +831,7 @@
       no_room_scene: "No room scene any more",
       white: "White",
       colour: "Colour",
+      white_channel: "White",
       saturation: "Saturation",
       drag: "Drag to reorder, or use the arrow keys",
       moved: "Moved to position {n} of {m}.",
@@ -859,6 +860,7 @@
         invalid_value: "Value out of range:",
         invalid_delay: "Delay out of range:",
         invalid_temperature: "Temperature out of range:",
+        invalid_temperature_step: "Temperature not on the step of the device:",
         favorite_not_supported: "Favorites only work on players of the music system:",
         invalid_scene_call: "This scene cannot be called.",
         duplicate_entity: "Device used twice:",
@@ -961,6 +963,7 @@
       no_room_scene: "Keine Raumszene mehr",
       white: "Wei\xDF",
       colour: "Farbe",
+      white_channel: "Wei\xDF",
       saturation: "S\xE4ttigung",
       drag: "Ziehen zum Sortieren, oder Pfeiltasten",
       moved: "An Stelle {n} von {m} verschoben.",
@@ -989,6 +992,7 @@
         invalid_value: "Wert au\xDFerhalb des Bereichs:",
         invalid_delay: "Verz\xF6gerung au\xDFerhalb des Bereichs:",
         invalid_temperature: "Temperatur au\xDFerhalb des Bereichs:",
+        invalid_temperature_step: "Temperatur passt nicht zur Schrittweite des Ger\xE4ts:",
         favorite_not_supported: "Favoriten nur f\xFCr Player des Musiksystems:",
         invalid_scene_call: "Diese Szene l\xE4sst sich nicht aufrufen.",
         duplicate_entity: "Ger\xE4t doppelt:",
@@ -1003,7 +1007,7 @@
       }
     }
   };
-  var TILE = { w: 640, h: 480 };
+  var TILE = { w: 640, h: 640 };
   var ResidentScenesCard = class extends i4 {
     constructor() {
       super(...arguments);
@@ -1033,6 +1037,10 @@
         this.updateComplete.then(() => this._fitLines());
       });
       this._ro.observe(this);
+      this._outside ??= (ev) => {
+        if (this._edit?.favOpen && !ev.composedPath().some((n4) => n4.classList?.contains("favorites"))) this._setEdit({ favOpen: null });
+      };
+      window.addEventListener("click", this._outside);
       if (this.hass && !this._started) this._start();
     }
     disconnectedCallback() {
@@ -1044,6 +1052,7 @@
       this.hass?.connection.removeEventListener?.("ready", this._onReady);
       this.hass?.connection.removeEventListener?.("disconnected", this._onDown);
       this._ro?.disconnect();
+      window.removeEventListener("click", this._outside);
       this._unsubscribe();
     }
     updated(changed) {
@@ -1070,6 +1079,9 @@
       for (const clip of this.renderRoot.querySelectorAll(".clip[data-fit]")) {
         const parts = clip.parts ?? [];
         const more = clip.nextElementSibling;
+        const key = JSON.stringify([clip.parentElement.clientWidth, this._lang, parts]);
+        if (clip.fitted === key) continue;
+        clip.fitted = key;
         const show = (k3) => {
           clip.textContent = parts.slice(0, k3).join(", ");
           more.textContent = k3 === parts.length ? "" : k3 ? `+ ${parts.length - k3} ${this._t("more")}` : `${parts.length} ${this._t("devices_n")}`;
@@ -1271,7 +1283,6 @@
       const favs = d3.favorites.map((id) => this._scene(id)).filter(Boolean);
       const rest = this._scenes.filter((s5) => !d3.favorites.includes(s5.id));
       const row = (s5) => b2`<div class="row ${this._selected === s5.id ? "selected" : ""}">
-      ${s5.image_url ? b2`<img class="thumb" src=${s5.image_url} alt="" />` : b2`<span class="thumb">${PLACEHOLDER}</span>`}
       ${manage ? b2`<button class="name link" data-action="select" data-id=${s5.id} @click=${() => this._select(s5.id)}>${s5.name}</button>` : b2`<span class="name">${s5.name}</span>`}
       ${s5.kind === "installer" ? b2`<span class="badge">${this._t("installer")}</span>` : A}
       ${this._playButton(s5.entity_id, false, s5.name)}
@@ -1286,7 +1297,7 @@
       ${rest.length ? rest.map(row) : favs.length ? A : b2`<p class="muted">${this._t("empty")}</p>`}
       ${d3.foreign_scenes.length ? b2`<h3>${this._t("other_scenes")}</h3>
             ${d3.foreign_scenes.map(
-        (s5) => b2`<div class="row"><span class="thumb">${PLACEHOLDER}</span>
+        (s5) => b2`<div class="row">
                 <span class="name">${this._name(s5.entity_id, s5.name)}${s5.knx ? b2`<span class="badge">KNX</span>` : A}</span>
                 ${this._playButton(s5.entity_id, false, this._name(s5.entity_id, s5.name))}</div>`
       )}` : A}
@@ -1311,17 +1322,23 @@
       const slot = d3.favorites.indexOf(s5.id);
       return b2`${this._narrow ? b2`<button data-action="back" @click=${this._back}>‹ ${this._t("back")}</button>` : A}
       <div class="head">
-        ${s5.image_url ? b2`<img class="hero" src=${s5.image_url} alt="" />` : A}
+        ${this._hero(s5)}
+        <div class="title">
         <h2>${s5.name} ${s5.kind === "installer" ? b2`<span class="badge">${this._t("installer")}</span>` : A}</h2>
+        <div class="tools">
         ${this._playButton(s5.entity_id, true)}
         ${d3.can_edit ? b2`<button data-action="heart" aria-label=${this._t("favorites")} aria-pressed=${slot >= 0 ? "true" : "false"}
               @click=${() => this._slots = {}}>♥${slot >= 0 ? ` ${this._t("slot")} ${slot + 1}` : ""}</button>` : A}
         ${d3.can_edit && s5.editable ? b2`<button data-action="edit" @click=${() => this._openEditor(s5.id)}>${this._t("edit")}</button>` : A}
         ${d3.can_edit && s5.editable && s5.can_undo ? b2`<button data-action="undo" @click=${this._undo}>${this._t("undo")}</button>` : A}
-      </div>
+      </div></div></div>
       ${this._detailError ? b2`<p class="error" role="alert">${this._detailError}</p>` : A}
       <p class="muted" role="status">${this._undone ? this._t("undone") : A}</p>
       ${s5.sequence.length ? b2`<h3>${this._t("order")}</h3>${s5.sequence.map((step, i7) => b2`<div class="row">${this._stepLine(step, i7 === s5.sequence.length - 1)}</div>`)}` : b2`<p class="muted">${this._t("no_steps")}</p>`}`;
+    }
+    // the scene image: a square of 80 px beside the name, the placeholder without one (spec 5.2, Z6)
+    _hero(s5) {
+      return s5.image_url ? b2`<img class="hero" src=${s5.image_url} alt="" />` : b2`<span class="hero">${PLACEHOLDER}</span>`;
     }
     _stepTitle(step) {
       const room = !this._house ? "" : `${step.area_id ? this._areaName(step.area_id) : this._t("no_room")} \u2013 `;
@@ -1549,6 +1566,8 @@
       const trades = this._house ? DOMAINS.filter((t5) => t5 !== "scene" && e5.devices.some((dev) => dev.domain === t5 && dev.released !== false)) : [];
       return b2`<div class="bar">
         <button class="icon" data-action="done-back" aria-label=${this._t("back")} @click=${this._done}>‹</button>
+        ${own ? b2`<button class="image-btn" data-action="image" aria-label=${this._t("choose_image")} aria-expanded=${e5.picking ? "true" : "false"}
+              @click=${() => this._setEdit({ picking: !e5.picking })}>${this._hero(s5)}<span class="pencil" aria-hidden="true">✎</span></button>` : A}
         <span class="name">${s5.name}</span>
         <button class="primary" data-action="done" @click=${this._done}>${this._t("done")}</button>
       </div>
@@ -1733,6 +1752,7 @@
       const domain = step.entity_id.split(".")[0];
       if (domain === "light") {
         const v3 = { brightness: a3.brightness ?? 255 };
+        if (a3.color_mode === "white") return { ...v3, white: true };
         if (a3.color_temp_kelvin && (a3.color_mode === "color_temp" || !a3.hs_color)) v3.color_temp_kelvin = a3.color_temp_kelvin;
         else if (a3.hs_color) Object.assign(v3, { hue: a3.hs_color[0], saturation: a3.hs_color[1] });
         return v3;
@@ -1761,11 +1781,18 @@
       };
       const power = (send) => this._switch("on", on, this._t("on"), (o5) => o5 ? send() : off(), eid);
       if (dev.domain === "light") {
-        const white = c5.color_temp && (!c5.color || v3.hue == null);
+        const plain = on && v3.white && c5.white_mode;
+        const white = !plain && c5.color_temp && (!c5.color || v3.hue == null);
         const kelvin = v3.color_temp_kelvin ?? c5.min_kelvin ?? 2700;
         const colour = (patch) => set({ hue: v3.hue ?? 30, saturation: v3.saturation ?? 100, ...patch });
-        const shown = !on || v3.color_temp_kelvin == null && v3.hue == null ? white ? { color_temp_kelvin: kelvin } : c5.color ? { hue: v3.hue ?? 30, saturation: v3.saturation ?? 100 } : {} : {};
+        const shown = !on || !source.attributes?.color_mode && v3.color_temp_kelvin == null && v3.hue == null ? white ? { color_temp_kelvin: kelvin } : c5.color && !plain ? { hue: v3.hue ?? 30, saturation: v3.saturation ?? 100 } : {} : {};
         const keep = (values) => set({ ...shown, ...values });
+        const modes = [
+          ...c5.white_mode ? [["white_channel", this._t("white_channel")]] : [],
+          ...c5.color_temp ? [["white", this._t(c5.white_mode ? "color_temp" : "white")]] : [],
+          ...c5.color ? [["colour", this._t("colour")]] : []
+        ];
+        const pick = { white_channel: () => set({ white: true }), white: () => set({ color_temp_kelvin: kelvin }), colour: () => colour({}) };
         return b2`${power(() => keep({}))}
         ${c5.brightness ? slider(
           "brightness",
@@ -1776,14 +1803,7 @@
           "%",
           (p4) => keep({ brightness: Math.max(1, Math.round(p4 * 2.55)) })
         ) : A}
-        ${c5.color_temp && c5.color ? this._seg(
-          "light_mode",
-          eid,
-          [["white", this._t("white")], ["colour", this._t("colour")]],
-          white ? "white" : "colour",
-          (m3) => m3 === "white" ? set({ color_temp_kelvin: kelvin }) : colour({}),
-          !!entry
-        ) : A}
+        ${modes.length > 1 ? this._seg("light_mode", eid, modes, plain ? "white_channel" : white ? "white" : "colour", (m3) => pick[m3](), !!entry) : A}
         ${white ? slider(
           "color_temp_kelvin",
           "color_temp",
@@ -1793,7 +1813,7 @@
           "K",
           (k2) => set({ color_temp_kelvin: k2 })
         ) : A}
-        ${c5.color && !white ? b2`${slider("hue", "hue", 0, 360, v3.hue ?? 30, "\xB0", (h4) => colour({ hue: h4 }))}
+        ${c5.color && !white && !plain ? b2`${slider("hue", "hue", 0, 360, v3.hue ?? 30, "\xB0", (h4) => colour({ hue: h4 }))}
               ${slider("saturation", "saturation", 0, 100, v3.saturation ?? 100, "%", (x2) => colour({ saturation: x2 }))}` : A}`;
       }
       if (dev.domain === "cover") {
@@ -1806,9 +1826,13 @@
         const send = (patch) => set({ hvac_mode: v3.hvac_mode, ...v3.temperature != null ? { temperature: v3.temperature } : {}, ...patch });
         const typed = (ev) => {
           const value = Number(ev.target.value.trim().replace(",", "."));
-          if (ev.target.value.trim() && value >= (c5.min_temp ?? 5) && value <= (c5.max_temp ?? 35)) return send({ temperature: value });
+          const min = c5.min_temp ?? 5;
+          const step2 = c5.temp_step ?? 0.5;
+          const inside = ev.target.value.trim() && value >= min && value <= (c5.max_temp ?? 35);
+          const onStep = Math.abs((value - min) / step2 - Math.round((value - min) / step2)) < 1e-6;
+          if (inside && onStep) return send({ temperature: value });
           this._drafts.delete(key);
-          this._setEdit({ error: "invalid_temperature", errorDetail: this._tempRange(c5) });
+          this._setEdit(inside ? { error: "invalid_temperature_step", errorDetail: `${this._num(step2)} ${this._unit}` } : { error: "invalid_temperature", errorDetail: this._tempRange(c5) });
         };
         return b2`${this._seg(
           "hvac_mode",
@@ -1883,10 +1907,8 @@
       const e5 = this._edit;
       const s5 = this._detail;
       const crop = e5.crop;
-      return b2`<div class="field"><span>${this._t("image")}</span>
-      <button class="image-btn" data-action="image" @click=${() => this._setEdit({ picking: !e5.picking })}>
-        ${s5.image_url ? b2`<img src=${s5.image_url} alt="" />` : b2`<span class="thumb">${PLACEHOLDER}</span>`}
-        <span>${this._t("choose_image")}</span></button>
+      if (!e5.picking && !crop) return A;
+      return b2`<div class="field">
       ${e5.picking ? b2`<div class="tiles">
             <button class="tile" data-action="pick-image" data-name="" @click=${() => this._pickImage(null)}>
               <span>${this._t("no_image")}</span></button>
@@ -2025,11 +2047,16 @@
     .name .line { display: flex; gap: 4px; align-items: center; min-width: 0; overflow: hidden; white-space: nowrap; }
     .line .clip { min-width: 0; overflow: hidden; text-overflow: ellipsis; } .line .more, .line .badge { flex: none; }
     .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); margin: 0; }
-    .thumb { width: 40px; height: 40px; border-radius: 6px; object-fit: cover; background: var(--secondary-background-color); flex: none;
-      display: inline-flex; align-items: center; justify-content: center; color: var(--secondary-text-color); }
-    .thumb svg { width: 24px; height: 24px; }
-    .hero { width: 100%; aspect-ratio: 4 / 3; object-fit: contain; border-radius: 8px; }
-    .head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; } .head h2 { flex: 1 1 100%; }
+    .hero { width: 80px; height: 80px; aspect-ratio: 1; object-fit: cover; border-radius: 8px; flex: none; box-sizing: border-box;
+      background: var(--secondary-background-color); display: inline-flex; align-items: center; justify-content: center;
+      color: var(--secondary-text-color); }
+    .hero svg { width: 40px; height: 40px; }
+    .head { display: flex; align-items: center; gap: 12px; max-height: 200px; }
+    .head .title { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 0 8px; }
+    .head h2 { flex: 1 1 12em; min-width: 0; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+    .head .tools { display: flex; flex-wrap: wrap; gap: 8px; }
+    .col-detail { container-type: inline-size; }
+    @container (width >= 600px) { .head { max-height: 120px; } }
     .columns { display: grid; grid-template-columns: minmax(220px, 1fr) 2fr; gap: 24px; }
     .bar { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; } .bar .name { flex: 1; min-width: 0; margin: 0; }
     .field { display: flex; flex-direction: column; gap: 4px; margin: 8px 0; }
@@ -2069,17 +2096,19 @@
       background: rgba(0, 0, 0, .4); border-radius: inherit; padding: 16px; box-sizing: border-box; }
     .dialog { background: var(--ha-card-background, var(--card-background-color, #fff)); border-radius: 12px; padding: 16px;
       width: 100%; max-width: 400px; box-sizing: border-box; position: sticky; top: 16px; }
-    .image-btn { display: flex; align-items: center; gap: 12px; padding: 4px 12px 4px 4px; align-self: flex-start; }
-    .image-btn img { width: 64px; aspect-ratio: 4 / 3; object-fit: cover; border-radius: 6px; }
-    .crop canvas { width: 100%; max-width: 320px; aspect-ratio: 4 / 3; border-radius: 8px; background: var(--secondary-background-color); }
+    .image-btn { position: relative; padding: 0; border: none; flex: none; }
+    .image-btn .pencil { position: absolute; right: 4px; bottom: 4px; width: 28px; height: 28px; border-radius: 50%; display: flex;
+      align-items: center; justify-content: center; background: var(--primary-color); color: var(--text-primary-color, #fff); }
+    .crop canvas { width: 100%; max-width: 320px; aspect-ratio: 1; border-radius: 8px; background: var(--secondary-background-color); }
     .handle { cursor: grab; touch-action: none; user-select: none; min-width: 44px; min-height: 44px; display: flex;
       align-items: center; justify-content: center; font-size: 1.4em; color: var(--secondary-text-color); border-radius: 8px; }
     .row.drop { outline: 2px dashed var(--primary-color); }
     .tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 12px; }
-    .tile { position: relative; aspect-ratio: 4 / 3; padding: 0; overflow: hidden; display: flex; align-items: flex-end; justify-content: center; }
+    .tile { position: relative; aspect-ratio: 1; padding: 0; overflow: hidden; display: flex; align-items: flex-end; justify-content: center; }
     .tile img, .tile svg { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
     .tile svg { padding: 25%; box-sizing: border-box; color: var(--secondary-text-color); }
-    .tile span { position: relative; width: 100%; padding: 8px; background: rgba(0,0,0,.45); color: #fff; text-align: left; }
+    .tile span { position: relative; width: 100%; padding: 24px 8px 8px; color: #fff; text-align: left; box-sizing: border-box;
+      background: linear-gradient(transparent, rgba(0, 0, 0, .7)); text-shadow: 0 1px 2px rgba(0, 0, 0, .8); }
   `);
   customElements.define("resident-scenes-card", ResidentScenesCard);
   window.customCards = window.customCards || [];

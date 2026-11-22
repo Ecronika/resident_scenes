@@ -142,7 +142,7 @@ async def test_edits_and_undo(hass, setup, hass_ws_client, resident_token):
         "success"
     ]
     await hass.async_block_till_done()
-    assert [c.data["action"] for c in changes] == ["created", "created", "changed"]
+    assert [c.data["action"] for c in changes] == ["created", "changed"]
     listing = (await call(type=f"{DOMAIN}/list", scope="kitchen"))["result"]
     assert listing["scenes"][0]["can_undo"] is True
     version = store.scenes[sid]["version"]
@@ -153,7 +153,7 @@ async def test_edits_and_undo(hass, setup, hass_ws_client, resident_token):
     # undo ends the edit: the next input of the open editor begins a new one, logged and undoable (review X9)
     assert (await call(**_cmd("update", sid, "b", transition=1)))["success"]
     await hass.async_block_till_done()
-    assert [c.data["action"] for c in changes] == ["created", "created", "changed", "change taken back", "changed"]
+    assert [c.data["action"] for c in changes] == ["created", "changed", "change taken back", "changed"]
     assert store.scenes[sid]["previous"]["transition"] is None
 
 
