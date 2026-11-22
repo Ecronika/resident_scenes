@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Any
 from uuid import uuid4
 
@@ -159,15 +160,19 @@ def step_issue(
     return None
 
 
-def light_hs(attrs: dict[str, Any]) -> list[float] | None:
-    """Return hue and saturation of a stored light colour in rgb, rgbw, rgbww or xy form (review X11)."""
+def light_hs(attrs: dict[str, Any], light: Mapping[str, Any] | None = None) -> list[float] | None:
+    """Return hue and saturation of a stored light colour in rgb, rgbw, rgbww or xy form (review X11).
+
+    The white channels of rgbww mix in by the light's kelvin range, as Home Assistant does (review Y8).
+    """
     if rgb := attrs.get("rgb_color"):
         return list(color_util.color_RGB_to_hs(*rgb))
     if rgbw := attrs.get("rgbw_color"):
         return list(color_util.color_RGB_to_hs(*color_util.color_rgbw_to_rgb(*rgbw)))
     if rgbww := attrs.get("rgbww_color"):
-        # shortcut: the hue of the colour channels only; the white channels stay stored and run as captured
-        return list(color_util.color_RGB_to_hs(*rgbww[:3]))
+        light = light or {}
+        low, high = light.get("min_color_temp_kelvin") or 2000, light.get("max_color_temp_kelvin") or 6500
+        return list(color_util.color_RGB_to_hs(*color_util.color_rgbww_to_rgb(*rgbww, low, high)))
     if xy := attrs.get("xy_color"):
         return list(color_util.color_xy_to_hs(*xy))
     return None

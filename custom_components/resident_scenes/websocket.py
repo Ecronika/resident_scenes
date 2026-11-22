@@ -209,7 +209,8 @@ def ws_scene(hass: HomeAssistant, connection: Connection, msg: dict[str, Any]) -
                 issue = step_issue(hass, step["area_id"], entry, allowed, favorites)
                 shown = {**entry, "issue": issue, "name": _name(hass, entry["entity_id"])}
                 attrs = entry.get("attributes") or {}
-                if "hs_color" not in attrs and (hs := light_hs(attrs)):  # the card's controls read hue (X11)
+                light = st.attributes if (st := hass.states.get(entry["entity_id"])) else {}
+                if "hs_color" not in attrs and (hs := light_hs(attrs, light)):  # the card's controls read hue (X11)
                     shown["attributes"] = {**attrs, "hs_color": hs}
                 if entry.get("music") == "favorite":  # a renamed favorite shows its new name (spec 4.6)
                     shown["favorite_name"] = favorites.get(entry["favorite_id"], entry.get("favorite_name"))
@@ -346,11 +347,16 @@ def _input_command(name: str, fields: dict[Any, Any]):
         if (store := _editor(hass, connection, msg["id"])) is None:
             return
         user = connection.user
+        registry = er.async_get(hass)
+        before = registry.async_get_entity_id("scene", DOMAIN, msg["scene_id"])
         if (done := await _run(connection, msg, store.async_input(msg, user.id, user.is_admin))) is None:
             return
         scene, began, result = done
         if began:
             _changed(hass, connection, msg, scene, "changed")
+        if registry.async_get_entity_id("scene", DOMAIN, scene["id"]) != before:
+            # the id followed the name: "created" again under the id that holds now, for the scene's logbook (Y7)
+            _changed(hass, connection, msg, scene, "created")
         if live := result.pop("live", None):
             # live adjustment: the device follows the input, the same way a run applies it
             await store.runner.async_apply(scene, live, connection.context(msg))

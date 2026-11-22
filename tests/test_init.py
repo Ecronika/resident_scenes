@@ -106,7 +106,10 @@ async def test_create_capture_and_activate(
     assert entity_id == "scene.evening"  # follows the first rename of "New 1"
     assert ent_reg.async_get(entity_id).area_id == "kitchen"
     assert hass.states.get(entity_id).attributes["step_count"] == 3
-    assert [c.data["action"] for c in changes] == ["created"]  # the creating edit logs once
+    # the creating edit logs no change; "created" again under the id that followed the name (review Y7)
+    assert [(c.data["action"], c.data["entity_id"]) for c in changes] == [
+        ("created", "scene.new_1"), ("created", "scene.evening")
+    ]
     assert changes[0].context.user_id is not None
 
     stored = flat(setup.runtime_data.scenes[scene_id])

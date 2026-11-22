@@ -139,8 +139,9 @@ const sent = (s, type) => s.calls.filter((c) => c.type === `resident_scenes/${ty
     s.notify({ changed: true });
     await tick();
     await click(root, '[data-action="open"][data-id="m1"]');
-    assert.strictEqual(root.querySelectorAll('[data-field="favorite_id"] button').length, 0); // FIXED (0.3.2): no button each
-    assert.strictEqual(root.querySelectorAll('select[data-field="favorite_id"] option').length, 40);
+    assert.strictEqual(root.querySelectorAll('[data-field="favorite_id"] button').length, 1); // FIXED (0.3.2): no button each, only the opener of the list (0.3.3)
+    await click(root, '[data-action="favorite-open"]'); // a list of the card since 0.3.3 (Y5)
+    assert.strictEqual(root.querySelectorAll('[data-field="favorite_id"] [role="option"]').length, 40);
     assert.ok(!q(root, '[data-field="live"]'), "no live adjustments for music"); // OK (5.4)
     assert.ok(!q(root, '.row.device [data-action="play"]'), "no play button at the favorite"); // OK
     card.remove();

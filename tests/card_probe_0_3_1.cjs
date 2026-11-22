@@ -235,10 +235,11 @@ const key = (node, name, extra = {}) =>
       volume: 0.2, issue: null };
     s.notify({ changed: true });
     await tick();
-    const list = q(root, 'select[data-field="favorite_id"]');
-    same([...list.options].map((o) => o.textContent), ["Sport", "News"]); // FIXED: a list
-    assert.ok(!q(root, '[data-field="favorite_id"] button'));
-    setValue(list, "f2");
+    assert.strictEqual(root.querySelectorAll('[data-field="favorite_id"] button').length, 1); // only the opener (0.3.3)
+    await click(root, '[data-action="favorite-open"]'); // a list of the card since 0.3.3 (Y5)
+    const options = [...root.querySelectorAll('[data-field="favorite_id"] [role="option"]')];
+    same(options.map((o) => o.textContent.trim()), ["Sport", "News"]); // FIXED: a list
+    options[1].click();
     await tick();
     assert.strictEqual(sent(s, "set_entry").at(-1).favorite_id, "f2");
     card.remove();

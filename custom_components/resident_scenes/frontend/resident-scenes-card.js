@@ -731,7 +731,7 @@
   });
 
   // src/resident-scenes-card.js
-  var VERSION = "0.3.2";
+  var VERSION = "0.3.3";
   var WS = "resident_scenes";
   var HOUSE = "_house";
   var DOMAINS = ["light", "cover", "climate", "switch", "fan", "media_player", "scene"];
@@ -858,6 +858,7 @@
         invalid_step: "Invalid setting.",
         invalid_value: "Value out of range:",
         invalid_delay: "Delay out of range:",
+        invalid_temperature: "Temperature out of range:",
         favorite_not_supported: "Favorites only work on players of the music system:",
         invalid_scene_call: "This scene cannot be called.",
         duplicate_entity: "Device used twice:",
@@ -987,6 +988,7 @@
         invalid_step: "Ung\xFCltige Einstellung.",
         invalid_value: "Wert au\xDFerhalb des Bereichs:",
         invalid_delay: "Verz\xF6gerung au\xDFerhalb des Bereichs:",
+        invalid_temperature: "Temperatur au\xDFerhalb des Bereichs:",
         favorite_not_supported: "Favoriten nur f\xFCr Player des Musiksystems:",
         invalid_scene_call: "Diese Szene l\xE4sst sich nicht aufrufen.",
         duplicate_entity: "Ger\xE4t doppelt:",
@@ -1026,7 +1028,10 @@
     }
     connectedCallback() {
       super.connectedCallback();
-      this._ro = new ResizeObserver(([entry]) => this._narrow = entry.contentRect.width < 600);
+      this._ro = new ResizeObserver(([entry]) => {
+        this._narrow = entry.contentRect.width < 600;
+        this.updateComplete.then(() => this._fitLines());
+      });
       this._ro.observe(this);
       if (this.hass && !this._started) this._start();
     }
@@ -1058,6 +1063,25 @@
       }
       this._dialog = dialog;
       this._safe = safe;
+      this._fitLines();
+    }
+    // the row of a step names the devices that fully fit, the rest as "+ 3 weitere"; none fits: "3 Geräte" (spec 5.2, Y3)
+    _fitLines() {
+      for (const clip of this.renderRoot.querySelectorAll(".clip[data-fit]")) {
+        const parts = clip.parts ?? [];
+        const more = clip.nextElementSibling;
+        const show = (k3) => {
+          clip.textContent = parts.slice(0, k3).join(", ");
+          more.textContent = k3 === parts.length ? "" : k3 ? `+ ${parts.length - k3} ${this._t("more")}` : `${parts.length} ${this._t("devices_n")}`;
+        };
+        let k2 = parts.length;
+        show(k2);
+        if (!clip.parentElement.clientWidth) {
+          show(Math.min(2, k2));
+          continue;
+        }
+        while (k2 > (parts.length > 1 ? 0 : 1) && clip.scrollWidth > clip.clientWidth) show(--k2);
+      }
     }
     // Escape picks the safe answer, Tab stays inside the question (spec 5.7)
     _dialogKey(ev) {
@@ -1100,6 +1124,10 @@
     }
     _t(key) {
       return key.split(".").reduce((o5, k2) => o5?.[k2], I18N[this._lang]) ?? key;
+    }
+    // the range the server checks a setpoint against, its defaults included
+    _tempRange(c5) {
+      return `${this._num(c5.min_temp ?? 5)}\u2013${this._num(c5.max_temp ?? 35)} ${this._unit}`;
     }
     _num(value) {
       return Number(value).toLocaleString(this._lang);
@@ -1305,11 +1333,10 @@
         return b2`<span class="name">+ ${this._num(step.seconds)} s${last ? b2` <span class="muted">· ${this._t("no_effect")}</span>` : A}</span>`;
       }
       const issue = step.type === "scene" ? step.issue : step.entries.find((e5) => e5.issue)?.issue;
-      const shown = step.type === "scene" ? [] : step.entries.slice(0, 2);
-      const more = step.type === "scene" ? 0 : step.entries.length - shown.length;
-      const values = step.type === "scene" ? step.name : shown.map((e5) => `${this._name(e5.entity_id, e5.name)} ${this._summary(e5)}`).join(", ") || "\u2013";
+      const parts = step.type === "scene" ? [] : step.entries.map((e5) => `${this._name(e5.entity_id, e5.name)} ${this._summary(e5)}`);
+      const values = parts.length ? b2`<span class="clip" data-fit .parts=${parts}></span><span class="more"></span>` : b2`<span class="clip">${step.type === "scene" ? step.name : "\u2013"}</span>`;
       return b2`<span class="name"><span class="line">${this._stepTitle(step)}</span>
-      <span class="line"><span class="clip">${values}</span>${more ? b2`<span class="more">+ ${more} ${this._t("more")}</span>` : A}${issue ? b2`<span class="badge warn">${this._t(issue)}</span>` : A}</span></span>`;
+      <span class="line">${values}${issue ? b2`<span class="badge warn">${this._t(issue)}</span>` : A}</span></span>`;
     }
     _summary(entry) {
       const pct = (v3) => `${Math.round(v3 * 100)} %`;
@@ -1476,7 +1503,9 @@
       } catch (err) {
         const detail = /^\w+: (.+)$/.exec(err.message ?? "")?.[1] ?? "";
         const named = /^[a-z_]+\.\S+$/.test(detail) ? this._name(detail) : detail;
-        if (this._edit) this._setEdit({ [at]: err.code ?? "default", errorDetail: named });
+        const caps = this._edit?.devices.find((d3) => d3.entity_id === fields.entity_id)?.capabilities ?? {};
+        const range = err.code === "invalid_value" && detail === "temperature";
+        if (this._edit) this._setEdit(range ? { [at]: "invalid_temperature", errorDetail: this._tempRange(caps) } : { [at]: err.code ?? "default", errorDetail: named });
         this._drafts.clear();
         await this._loadDetail();
         return void 0;
@@ -1574,7 +1603,7 @@
           (this._delaySent ??= {})[step.id] = { seconds, at: Date.now() };
           this._send("set_delay", { step_id: step.id, seconds });
         };
-        return b2`<div class=${cls}>${handle}
+        return b2`<div class="${cls} delay-row">${handle}
         <div class="delay">
           <button class="icon" data-action="delay-minus" aria-label="−1 s" ?disabled=${base() <= 1}
             @click=${() => set(base() - 1)}>−</button>
@@ -1583,8 +1612,7 @@
             @input=${this._keep(key)} @change=${(ev) => this._typedDelay(key, ev.target.value, max, set)} /> s</label>
           <button class="icon" data-action="delay-plus" aria-label="+1 s" ?disabled=${base() >= max}
             @click=${() => set(base() + 1)}>+</button>
-          ${last ? b2`<span class="muted">${this._t("no_effect")}</span>` : A}
-        </div>${remove}</div>`;
+        </div>${remove}</div>${last ? b2`<p class="muted hint">${this._t("no_effect")}</p>` : A}`;
       }
       return b2`<div class=${cls}>${handle}${this._stepLine(step)}
       <div class="tools">
@@ -1736,7 +1764,9 @@
         const white = c5.color_temp && (!c5.color || v3.hue == null);
         const kelvin = v3.color_temp_kelvin ?? c5.min_kelvin ?? 2700;
         const colour = (patch) => set({ hue: v3.hue ?? 30, saturation: v3.saturation ?? 100, ...patch });
-        return b2`${power(() => set({}))}
+        const shown = !on || v3.color_temp_kelvin == null && v3.hue == null ? white ? { color_temp_kelvin: kelvin } : c5.color ? { hue: v3.hue ?? 30, saturation: v3.saturation ?? 100 } : {} : {};
+        const keep = (values) => set({ ...shown, ...values });
+        return b2`${power(() => keep({}))}
         ${c5.brightness ? slider(
           "brightness",
           "brightness",
@@ -1744,7 +1774,7 @@
           100,
           Math.round(v3.brightness / 2.55),
           "%",
-          (p4) => set({ brightness: Math.max(1, Math.round(p4 * 2.55)) })
+          (p4) => keep({ brightness: Math.max(1, Math.round(p4 * 2.55)) })
         ) : A}
         ${c5.color_temp && c5.color ? this._seg(
           "light_mode",
@@ -1776,9 +1806,9 @@
         const send = (patch) => set({ hvac_mode: v3.hvac_mode, ...v3.temperature != null ? { temperature: v3.temperature } : {}, ...patch });
         const typed = (ev) => {
           const value = Number(ev.target.value.trim().replace(",", "."));
-          if (ev.target.value.trim() && Number.isFinite(value)) return send({ temperature: value });
+          if (ev.target.value.trim() && value >= (c5.min_temp ?? 5) && value <= (c5.max_temp ?? 35)) return send({ temperature: value });
           this._drafts.delete(key);
-          this._setEdit({ error: "invalid_value", errorDetail: this._t("temperature") });
+          this._setEdit({ error: "invalid_temperature", errorDetail: this._tempRange(c5) });
         };
         return b2`${this._seg(
           "hvac_mode",
@@ -1790,7 +1820,7 @@
         )}
         <label class="field">${this._t("temperature")} (${this._unit})<input inputmode="decimal" maxlength="5"
           data-field="temperature" data-entity=${eid} data-key=${key}
-          .value=${l3(String(this._draft(key, v3.temperature ?? "")))} @input=${this._keep(key)} @change=${typed} /></label>`;
+          .value=${l3(String(this._draft(key, v3.temperature != null ? this._num(v3.temperature) : "")))} @input=${this._keep(key)} @change=${typed} /></label>`;
       }
       if (dev.domain === "fan") {
         return b2`${power(() => set({ percentage: v3.percentage }))}
@@ -1808,13 +1838,45 @@
         const missing = entry?.issue === "favorite_missing";
         return b2`${this._seg("music", eid, modes, mode, (m3) => send(m3), !!entry)}
         ${dev.music_system && !offer ? b2`<p class="muted">${this._t("no_favorites")}</p>` : A}
-        ${mode === "favorite" ? b2`<select data-field="favorite_id" data-entity=${eid} aria-label=${this._t("favorite")}
-              @change=${(ev) => send("favorite", { favorite_id: ev.target.value })}>
-              ${missing ? b2`<option value="" selected disabled>${this._t("favorite_missing")}</option>` : A}
-              ${favs.map((f3) => b2`<option value=${f3.id} ?selected=${!missing && f3.id === favorite}>${f3.name}</option>`)}</select>` : A}
+        ${mode === "favorite" ? this._favoriteList(eid, favs, missing ? null : favorite, (id) => send("favorite", { favorite_id: id })) : A}
         ${mode !== "off" ? slider("volume", "volume", 0, 100, Math.round(volume * 100), "%", (p4) => send(mode, { volume: p4 / 100 })) : A}`;
       }
       return A;
+    }
+    // a list of the card, not the select of the browser (spec 5.7, Y5); it shows the stored favorite, so a refused choice reverts
+    _favoriteList(eid, favs, current, pick) {
+      const open = this._edit.favOpen === eid;
+      const name = favs.find((f3) => f3.id === current)?.name ?? this._t("favorite_missing");
+      const close = (focus) => {
+        this._setEdit({ favOpen: null });
+        if (focus) this.updateComplete.then(() => this.renderRoot.querySelector(`[data-action="favorite-open"][data-entity="${eid}"]`)?.focus());
+      };
+      const toggle = () => {
+        if (open) return close(false);
+        this._setEdit({ favOpen: eid });
+        this.updateComplete.then(() => {
+          const list = this.renderRoot.querySelector(`[role="listbox"][data-entity="${eid}"]`);
+          (list?.querySelector('[aria-selected="true"]') ?? list?.querySelector("button"))?.focus();
+        });
+      };
+      const key = (ev) => {
+        const items = [...ev.currentTarget.querySelectorAll("button")];
+        const at = items.indexOf(this.renderRoot.activeElement);
+        const to = { ArrowDown: at + 1, ArrowUp: at - 1, Home: 0, End: items.length - 1 }[ev.key];
+        if (ev.key === "Escape") {
+          ev.stopPropagation();
+          close(true);
+        } else if (to != null) {
+          ev.preventDefault();
+          items[Math.max(0, Math.min(items.length - 1, to))]?.focus();
+        }
+      };
+      return b2`<div class="favorites" data-field="favorite_id" data-entity=${eid} data-value=${current ?? ""}>
+      <button class="choice" data-action="favorite-open" data-entity=${eid} aria-haspopup="listbox"
+        aria-expanded=${open ? "true" : "false"} aria-label=${`${this._t("favorite")}: ${name}`} @click=${toggle}>${name} ▾</button>
+      ${open ? b2`<div role="listbox" data-entity=${eid} aria-label=${this._t("favorite")} @keydown=${key}>
+            ${favs.map((f3) => b2`<button role="option" aria-selected=${f3.id === current ? "true" : "false"} data-value=${f3.id}
+              @click=${() => (close(true), f3.id !== current && pick(f3.id))}>${f3.name}</button>`)}</div>` : A}</div>`;
     }
     // ---------- image (spec 4.8, 5.6) ----------
     _renderImagePicker() {
@@ -1949,8 +2011,6 @@
     button, input[type=number], input:not([type]) { min-height: 44px; font: inherit; color: inherit; border-radius: 8px;
       border: 1px solid var(--divider-color); background: transparent; padding: 0 12px; box-sizing: border-box; max-width: 100%; }
     button { cursor: pointer; min-width: 44px; }
-    select { min-height: 44px; font: inherit; color: inherit; border-radius: 8px; border: 1px solid var(--divider-color);
-      background: transparent; padding: 0 12px; max-width: 100%; }
     button:focus-visible, input:focus-visible, .handle:focus-visible { outline: 2px solid var(--primary-color); }
     button.primary { background: var(--primary-color); color: var(--text-primary-color, #fff); border-color: var(--primary-color); }
     button.danger { color: var(--error-color); border-color: var(--error-color); }
@@ -1974,7 +2034,14 @@
     .bar { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; } .bar .name { flex: 1; min-width: 0; margin: 0; }
     .field { display: flex; flex-direction: column; gap: 4px; margin: 8px 0; }
     .actions, .pick, .tools, .delay, .controls, .seg { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
-    .secs { width: 4ch; text-align: center; }
+    .delay-row { flex-wrap: nowrap; } .delay-row .delay { flex: 1; min-width: 0; flex-wrap: nowrap; gap: 4px; }
+    .delay-row .plain { gap: 2px; } .delay-row .plain input.secs { width: 3.5em; padding: 0 4px; }
+    .hint { margin: 4px 0 8px 52px; }
+    .favorites { flex: 1 1 100%; } .favorites [role=listbox] { display: flex; flex-direction: column; gap: 4px; margin-top: 4px;
+      max-height: 50vh; overflow: auto; }
+    .favorites [role=option] { text-align: left; }
+    .favorites [role=option][aria-selected=true] { background: var(--primary-color); color: var(--text-primary-color, #fff);
+      border-color: var(--primary-color); }
     .actions { margin-top: 16px; } .pick { margin: 8px 0; }
     .controls { flex: 1 1 100%; padding-bottom: 8px; }
     .seg button[aria-checked=true] { background: var(--primary-color); color: var(--text-primary-color, #fff); border-color: var(--primary-color); }

@@ -4,7 +4,7 @@ import { LitElement, html, css, nothing } from "lit";
 import { live } from "lit/directives/live.js";
 import { repeat } from "lit/directives/repeat.js";
 
-const VERSION = "0.3.2"; // must match the integration (checked by tests)
+const VERSION = "0.3.3"; // must match the integration (checked by tests)
 const WS = "resident_scenes";
 const HOUSE = "_house";
 const DOMAINS = ["light", "cover", "climate", "switch", "fan", "media_player", "scene"];
@@ -50,6 +50,7 @@ const I18N = {
       entity_unavailable: "Not reachable, its state cannot be captured:",
       unknown_favorite: "This favorite no longer exists.", not_found: "The scene no longer exists.",
       invalid_step: "Invalid setting.", invalid_value: "Value out of range:", invalid_delay: "Delay out of range:",
+      invalid_temperature: "Temperature out of range:",
       favorite_not_supported: "Favorites only work on players of the music system:",
       invalid_scene_call: "This scene cannot be called.", duplicate_entity: "Device used twice:",
       protected: "Installer scene: only its released content can be changed.", invalid_image: "Image not found.",
@@ -94,7 +95,7 @@ const I18N = {
       entity_unavailable: "Nicht erreichbar, der Zustand lässt sich nicht übernehmen:",
       unknown_favorite: "Diesen Favoriten gibt es nicht mehr.", not_found: "Die Szene gibt es nicht mehr.",
       invalid_step: "Ungültige Einstellung.", invalid_value: "Wert außerhalb des Bereichs:",
-      invalid_delay: "Verzögerung außerhalb des Bereichs:", favorite_not_supported: "Favoriten nur für Player des Musiksystems:",
+      invalid_delay: "Verzögerung außerhalb des Bereichs:", invalid_temperature: "Temperatur außerhalb des Bereichs:", favorite_not_supported: "Favoriten nur für Player des Musiksystems:",
       invalid_scene_call: "Diese Szene lässt sich nicht aufrufen.", duplicate_entity: "Gerät doppelt:",
       protected: "Errichterszene: nur der freigegebene Inhalt lässt sich ändern.", invalid_image: "Bild nicht gefunden.",
       invalid_image_file: "Das ist keine Bilddatei.", image_too_large: "Bild zu groß, Grenze:",
@@ -149,7 +150,10 @@ class ResidentScenesCard extends LitElement {
 
   connectedCallback() {
     super.connectedCallback();
-    this._ro = new ResizeObserver(([entry]) => (this._narrow = entry.contentRect.width < 600));
+    this._ro = new ResizeObserver(([entry]) => {
+      this._narrow = entry.contentRect.width < 600;
+      this.updateComplete.then(() => this._fitLines()); // after a switch of the layout
+    });
     this._ro.observe(this);
     if (this.hass && !this._started) this._start();
   }
@@ -185,6 +189,27 @@ class ResidentScenesCard extends LitElement {
     }
     this._dialog = dialog;
     this._safe = safe;
+    this._fitLines();
+  }
+
+  // the row of a step names the devices that fully fit, the rest as "+ 3 weitere"; none fits: "3 Geräte" (spec 5.2, Y3)
+  _fitLines() {
+    for (const clip of this.renderRoot.querySelectorAll(".clip[data-fit]")) {
+      const parts = clip.parts ?? [];
+      const more = clip.nextElementSibling;
+      const show = (k) => {
+        clip.textContent = parts.slice(0, k).join(", ");
+        more.textContent = k === parts.length ? "" : k ? `+ ${parts.length - k} ${this._t("more")}` : `${parts.length} ${this._t("devices_n")}`;
+      };
+      let k = parts.length;
+      show(k);
+      // no layout (hidden card, jsdom): two devices, the line clipped
+      if (!clip.parentElement.clientWidth) {
+        show(Math.min(2, k));
+        continue;
+      }
+      while (k > (parts.length > 1 ? 0 : 1) && clip.scrollWidth > clip.clientWidth) show(--k);
+    }
   }
 
   // Escape picks the safe answer, Tab stays inside the question (spec 5.7)
@@ -234,6 +259,11 @@ class ResidentScenesCard extends LitElement {
 
   _t(key) {
     return key.split(".").reduce((o, k) => o?.[k], I18N[this._lang]) ?? key;
+  }
+
+  // the range the server checks a setpoint against, its defaults included
+  _tempRange(c) {
+    return `${this._num(c.min_temp ?? 5)}–${this._num(c.max_temp ?? 35)} ${this._unit}`;
   }
 
   _num(value) {
@@ -490,14 +520,13 @@ class ResidentScenesCard extends LitElement {
       return html`<span class="name">+ ${this._num(step.seconds)} s${last ? html` <span class="muted">· ${this._t("no_effect")}</span>` : nothing}</span>`;
     }
     const issue = step.type === "scene" ? step.issue : step.entries.find((e) => e.issue)?.issue;
-    // shortcut: two devices, the line clipped to the width; measure the names if the second one is often cut
-    const shown = step.type === "scene" ? [] : step.entries.slice(0, 2);
-    const more = step.type === "scene" ? 0 : step.entries.length - shown.length;
-    const values = step.type === "scene" ? step.name
-      : shown.map((e) => `${this._name(e.entity_id, e.name)} ${this._summary(e)}`).join(", ") || "–";
+    // the devices are filled in by _fitLines after the layout
+    const parts = step.type === "scene" ? [] : step.entries.map((e) => `${this._name(e.entity_id, e.name)} ${this._summary(e)}`);
+    const values = parts.length
+      ? html`<span class="clip" data-fit .parts=${parts}></span><span class="more"></span>`
+      : html`<span class="clip">${step.type === "scene" ? step.name : "–"}</span>`;
     return html`<span class="name"><span class="line">${this._stepTitle(step)}</span>
-      <span class="line"><span class="clip">${values}</span>${more ? html`<span class="more">+ ${more} ${this._t("more")}</span>` : nothing}${
-        issue ? html`<span class="badge warn">${this._t(issue)}</span>` : nothing}</span></span>`;
+      <span class="line">${values}${issue ? html`<span class="badge warn">${this._t(issue)}</span>` : nothing}</span></span>`;
   }
 
   _summary(entry) {
@@ -687,7 +716,11 @@ class ResidentScenesCard extends LitElement {
     } catch (err) {
       const detail = /^\w+: (.+)$/.exec(err.message ?? "")?.[1] ?? "";
       const named = /^[a-z_]+\.\S+$/.test(detail) ? this._name(detail) : detail;
-      if (this._edit) this._setEdit({ [at]: err.code ?? "default", errorDetail: named });
+      const caps = this._edit?.devices.find((d) => d.entity_id === fields.entity_id)?.capabilities ?? {};
+      // a refused setpoint names the range, not the key of the interface (Y4)
+      const range = err.code === "invalid_value" && detail === "temperature";
+      if (this._edit) this._setEdit(range ? { [at]: "invalid_temperature", errorDetail: this._tempRange(caps) }
+        : { [at]: err.code ?? "default", errorDetail: named });
       this._drafts.clear(); // a rejected input shows the stored value again (spec 4.5)
       await this._loadDetail(); // also after step_missing: the step is gone, show the sequence as stored
       return undefined;
@@ -803,7 +836,7 @@ class ResidentScenesCard extends LitElement {
         (this._delaySent ??= {})[step.id] = { seconds, at: Date.now() };
         this._send("set_delay", { step_id: step.id, seconds });
       };
-      return html`<div class=${cls}>${handle}
+      return html`<div class="${cls} delay-row">${handle}
         <div class="delay">
           <button class="icon" data-action="delay-minus" aria-label="−1 s" ?disabled=${base() <= 1}
             @click=${() => set(base() - 1)}>−</button>
@@ -812,8 +845,7 @@ class ResidentScenesCard extends LitElement {
             @input=${this._keep(key)} @change=${(ev) => this._typedDelay(key, ev.target.value, max, set)} /> s</label>
           <button class="icon" data-action="delay-plus" aria-label="+1 s" ?disabled=${base() >= max}
             @click=${() => set(base() + 1)}>+</button>
-          ${last ? html`<span class="muted">${this._t("no_effect")}</span>` : nothing}
-        </div>${remove}</div>`;
+        </div>${remove}</div>${last ? html`<p class="muted hint">${this._t("no_effect")}</p>` : nothing}`;
     }
     return html`<div class=${cls}>${handle}${this._stepLine(step)}
       <div class="tools">
@@ -993,9 +1025,14 @@ class ResidentScenesCard extends LitElement {
       const white = c.color_temp && (!c.color || v.hue == null);
       const kelvin = v.color_temp_kelvin ?? c.min_kelvin ?? 2700;
       const colour = (patch) => set({ hue: v.hue ?? 30, saturation: v.saturation ?? 100, ...patch });
-      return html`${power(() => set({}))}
+      // no colour stored (the light is off): "An" and the first input store the colour shown as well (spec 4.5, Y1)
+      const shown = !on || (v.color_temp_kelvin == null && v.hue == null)
+        ? (white ? { color_temp_kelvin: kelvin } : c.color ? { hue: v.hue ?? 30, saturation: v.saturation ?? 100 } : {})
+        : {};
+      const keep = (values) => set({ ...shown, ...values });
+      return html`${power(() => keep({}))}
         ${c.brightness ? slider("brightness", "brightness", 1, 100, Math.round(v.brightness / 2.55), "%",
-          (p) => set({ brightness: Math.max(1, Math.round(p * 2.55)) })) : nothing}
+          (p) => keep({ brightness: Math.max(1, Math.round(p * 2.55)) })) : nothing}
         ${c.color_temp && c.color
           ? this._seg("light_mode", eid, [["white", this._t("white")], ["colour", this._t("colour")]], white ? "white" : "colour",
               (m) => (m === "white" ? set({ color_temp_kelvin: kelvin }) : colour({})), !!entry)
@@ -1016,18 +1053,18 @@ class ResidentScenesCard extends LitElement {
     if (dev.domain === "climate") {
       const key = `temperature:${step.id}:${eid}`;
       const send = (patch) => set({ hvac_mode: v.hvac_mode, ...(v.temperature != null ? { temperature: v.temperature } : {}), ...patch });
-      // a text field: no arrows of the browser (X8); "21,5" is read like "21.5"
+      // a text field: no arrows of the browser (X8); "21,5" is read like "21.5", the range is named like the delay's (Y4)
       const typed = (ev) => {
         const value = Number(ev.target.value.trim().replace(",", "."));
-        if (ev.target.value.trim() && Number.isFinite(value)) return send({ temperature: value });
+        if (ev.target.value.trim() && value >= (c.min_temp ?? 5) && value <= (c.max_temp ?? 35)) return send({ temperature: value });
         this._drafts.delete(key);
-        this._setEdit({ error: "invalid_value", errorDetail: this._t("temperature") });
+        this._setEdit({ error: "invalid_temperature", errorDetail: this._tempRange(c) });
       };
       return html`${this._seg("hvac_mode", eid, (c.hvac_modes ?? []).map((m) => [m, this._state(eid, m)]), v.hvac_mode,
           (m) => send({ hvac_mode: m }), !!entry)}
         <label class="field">${this._t("temperature")} (${this._unit})<input inputmode="decimal" maxlength="5"
           data-field="temperature" data-entity=${eid} data-key=${key}
-          .value=${live(String(this._draft(key, v.temperature ?? "")))} @input=${this._keep(key)} @change=${typed} /></label>`;
+          .value=${live(String(this._draft(key, v.temperature != null ? this._num(v.temperature) : "")))} @input=${this._keep(key)} @change=${typed} /></label>`;
     }
     if (dev.domain === "fan") {
       return html`${power(() => set({ percentage: v.percentage }))}
@@ -1047,16 +1084,51 @@ class ResidentScenesCard extends LitElement {
       return html`${this._seg("music", eid, modes, mode, (m) => send(m), !!entry)}
         ${dev.music_system && !offer ? html`<p class="muted">${this._t("no_favorites")}</p>` : nothing}
         ${mode === "favorite" // one list, not a button per favorite (spec 5.2)
-          ? html`<select data-field="favorite_id" data-entity=${eid} aria-label=${this._t("favorite")}
-              @change=${(ev) => send("favorite", { favorite_id: ev.target.value })}>
-              ${missing ? html`<option value="" selected disabled>${this._t("favorite_missing")}</option>` : nothing}
-              ${favs.map((f) => html`<option value=${f.id} ?selected=${!missing && f.id === favorite}>${f.name}</option>`)}</select>`
+          ? this._favoriteList(eid, favs, missing ? null : favorite, (id) => send("favorite", { favorite_id: id }))
           : nothing}
         ${mode !== "off"
           ? slider("volume", "volume", 0, 100, Math.round(volume * 100), "%", (p) => send(mode, { volume: p / 100 }))
           : nothing}`;
     }
     return nothing;
+  }
+
+  // a list of the card, not the select of the browser (spec 5.7, Y5); it shows the stored favorite, so a refused choice reverts
+  _favoriteList(eid, favs, current, pick) {
+    const open = this._edit.favOpen === eid;
+    const name = favs.find((f) => f.id === current)?.name ?? this._t("favorite_missing");
+    const close = (focus) => {
+      this._setEdit({ favOpen: null });
+      if (focus) this.updateComplete.then(() => this.renderRoot.querySelector(`[data-action="favorite-open"][data-entity="${eid}"]`)?.focus());
+    };
+    const toggle = () => {
+      if (open) return close(false);
+      this._setEdit({ favOpen: eid });
+      this.updateComplete.then(() => {
+        const list = this.renderRoot.querySelector(`[role="listbox"][data-entity="${eid}"]`);
+        (list?.querySelector('[aria-selected="true"]') ?? list?.querySelector("button"))?.focus();
+      });
+    };
+    const key = (ev) => {
+      const items = [...ev.currentTarget.querySelectorAll("button")];
+      const at = items.indexOf(this.renderRoot.activeElement);
+      const to = { ArrowDown: at + 1, ArrowUp: at - 1, Home: 0, End: items.length - 1 }[ev.key];
+      if (ev.key === "Escape") {
+        ev.stopPropagation();
+        close(true);
+      } else if (to != null) {
+        ev.preventDefault();
+        items[Math.max(0, Math.min(items.length - 1, to))]?.focus();
+      }
+    };
+    return html`<div class="favorites" data-field="favorite_id" data-entity=${eid} data-value=${current ?? ""}>
+      <button class="choice" data-action="favorite-open" data-entity=${eid} aria-haspopup="listbox"
+        aria-expanded=${open ? "true" : "false"} aria-label=${`${this._t("favorite")}: ${name}`} @click=${toggle}>${name} ▾</button>
+      ${open
+        ? html`<div role="listbox" data-entity=${eid} aria-label=${this._t("favorite")} @keydown=${key}>
+            ${favs.map((f) => html`<button role="option" aria-selected=${f.id === current ? "true" : "false"} data-value=${f.id}
+              @click=${() => (close(true), f.id !== current && pick(f.id))}>${f.name}</button>`)}</div>`
+        : nothing}</div>`;
   }
 
   // ---------- image (spec 4.8, 5.6) ----------
@@ -1189,8 +1261,6 @@ class ResidentScenesCard extends LitElement {
     button, input[type=number], input:not([type]) { min-height: 44px; font: inherit; color: inherit; border-radius: 8px;
       border: 1px solid var(--divider-color); background: transparent; padding: 0 12px; box-sizing: border-box; max-width: 100%; }
     button { cursor: pointer; min-width: 44px; }
-    select { min-height: 44px; font: inherit; color: inherit; border-radius: 8px; border: 1px solid var(--divider-color);
-      background: transparent; padding: 0 12px; max-width: 100%; }
     button:focus-visible, input:focus-visible, .handle:focus-visible { outline: 2px solid var(--primary-color); }
     button.primary { background: var(--primary-color); color: var(--text-primary-color, #fff); border-color: var(--primary-color); }
     button.danger { color: var(--error-color); border-color: var(--error-color); }
@@ -1214,7 +1284,14 @@ class ResidentScenesCard extends LitElement {
     .bar { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; } .bar .name { flex: 1; min-width: 0; margin: 0; }
     .field { display: flex; flex-direction: column; gap: 4px; margin: 8px 0; }
     .actions, .pick, .tools, .delay, .controls, .seg { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
-    .secs { width: 4ch; text-align: center; }
+    .delay-row { flex-wrap: nowrap; } .delay-row .delay { flex: 1; min-width: 0; flex-wrap: nowrap; gap: 4px; }
+    .delay-row .plain { gap: 2px; } .delay-row .plain input.secs { width: 3.5em; padding: 0 4px; }
+    .hint { margin: 4px 0 8px 52px; }
+    .favorites { flex: 1 1 100%; } .favorites [role=listbox] { display: flex; flex-direction: column; gap: 4px; margin-top: 4px;
+      max-height: 50vh; overflow: auto; }
+    .favorites [role=option] { text-align: left; }
+    .favorites [role=option][aria-selected=true] { background: var(--primary-color); color: var(--text-primary-color, #fff);
+      border-color: var(--primary-color); }
     .actions { margin-top: 16px; } .pick { margin: 8px 0; }
     .controls { flex: 1 1 100%; padding-bottom: 8px; }
     .seg button[aria-checked=true] { background: var(--primary-color); color: var(--text-primary-color, #fff); border-color: var(--primary-color); }

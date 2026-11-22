@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.3.3
+
+Fixes of the 0.3.2 review.
+
+- Light without a stored colour (off, or not ticked while off): "On" and the first input store the colour
+  temperature or colour the editor shows; with a stored colour an input still changes only its own value (Y1, spec
+  4.5, 5.2).
+- Delay at 320 pixels card width: handle, minus, field, plus and remove stay in one line; "no effect" is shown below
+  the row (Y2).
+- The row of a step names as many devices as fully fit, the rest as "+ 3 more"; if not even the first fits, only
+  "3 devices". Without a layout (hidden card) it falls back to two devices (Y3, spec 5.2).
+- Thermostat: the card checks the setpoint against the range of the device and names it, "Temperature out of range:
+  7–30 °C", also when the server refuses it; the field shows the value in the notation of the language (Y4).
+- Music favorites: a list of the card instead of the select of the browser, opened on demand, with arrow keys and
+  Escape; it shows the stored favorite, so a refused choice reverts (Y5, spec 5.7).
+- Entity id in the creating edit: a rename whose slug gives the own id keeps it, and an edit of another account no
+  longer ends the following; only the end of the creator's edit does (Y6, spec 4.3).
+- Logbook: when the entity id follows the name, "scene created" is written again under the new id, so it appears in
+  the logbook of the named scene (Y7).
+- Hue of a light colour stored as RGBWW mixes the white channels in like Home Assistant, with the kelvin range of the
+  light (Y8).
+
 ## 0.3.2
 
 Fixes of the 0.3.1 review and draft 0.9 of the functional spec.

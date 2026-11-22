@@ -4,7 +4,7 @@ Resident Scenes gives non-admin accounts functions that Home Assistant otherwise
 Please report vulnerabilities privately via GitHub: *Security → Report a vulnerability* in this repository.
 Do not open a public issue for them.
 
-## Review of version 0.3.2 (2026-11-22)
+## Review of version 0.3.3 (2026-11-22)
 
 | Area | Check | Result |
 |---|---|---|

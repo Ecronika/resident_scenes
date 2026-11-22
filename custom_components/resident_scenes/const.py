@@ -3,7 +3,7 @@
 from typing import Final
 
 DOMAIN: Final = "resident_scenes"
-VERSION: Final = "0.3.2"  # keep in sync with manifest.json and the card (checked by tests)
+VERSION: Final = "0.3.3"  # keep in sync with manifest.json and the card (checked by tests)
 
 STORAGE_KEY: Final = f"{DOMAIN}.data"
 STORAGE_VERSION: Final = 3
