@@ -56,7 +56,7 @@ async function open(s) {
     sw("room", "u1:kueche").click();
     await tick(100);
     sw("house_right", "u1").click();
-    await tick(100);
+    await tick(200); // the third tap lands at 300 ms, midway through the second call (200-400 ms), not at its start
     sw("floor", "u1:og").click(); // the floor adds the bathroom
     await tick(1500);
     // OK: the calls go out one after the other, each with everything chosen so far
