@@ -80,7 +80,7 @@
   "issues": {
     "broken_steps": {
       "title": "Scene {scene} has missing parts",
-      "description": "These parts of the scene no longer exist and are skipped when it runs: {items}. Edit the scene in the card or restore the devices."
+      "description": "These parts of the scene no longer exist or are now in another room, and are skipped when it runs: {items}. Edit the scene in the card, restore the devices or move them back."
     }
   },
   "services": {
@@ -97,6 +97,24 @@
           "description": "The rooms to switch off."
         }
       }
+    },
+    "run_favorite": {
+      "name": "Run favorite",
+      "description": "Runs the scene that lies on a favorite slot of a room or of the house right now, e.g. from a push button. An empty slot runs nothing.",
+      "fields": {
+        "area_id": {
+          "name": "Area",
+          "description": "The room of the slot; or set House."
+        },
+        "house": {
+          "name": "House",
+          "description": "A slot of the house instead of a room."
+        },
+        "slot": {
+          "name": "Slot",
+          "description": "The slot, counted from 1 as in the card."
+        }
+      }
     }
   },
   "exceptions": {
@@ -108,6 +126,9 @@
     },
     "unknown_area": {
       "message": "Unknown area: {area}"
+    },
+    "invalid_slot": {
+      "message": "Unknown favorite slot: {slot}"
     }
   }
 }

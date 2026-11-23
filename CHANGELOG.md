@@ -1,5 +1,38 @@
 # Changelog
 
+## 0.6.0
+
+Nachbesserung 4c of the functional spec (draft 0.24, sections 4.4, 4.5, 4.9, 4.10, 4.13, 4.14) and the findings of the
+0.5.0 review.
+
+- "All off" is no longer undone by running scenes (AD1): a run that began before "All off" skips the devices it took,
+  also through a called room scene, and names them in the logbook; its other steps go on. A run that begins later is
+  not affected.
+- A device moved to another room drops out of the scenes of its old room: the entry stays stored, is skipped when
+  running and named in the logbook, the card marks it "In another room" and a repair issue names scene and device. When
+  the device comes back, the entry applies again and the issue goes. The issues are checked again when an entity or a
+  device gets another room. In a house scene the entry moves into a step of the new room right after its old step
+  (a following step of that room and trade before the next delay takes it, an entry of the device there wins, a step
+  left empty goes), also for devices moved while Home Assistant was stopped. This changes the rule of 4.5 that ran a
+  moved device on.
+- Action `resident_scenes.run_favorite` (`area_id` or `house: true`, and `slot` from 1): runs the scene on that slot at
+  this moment, with the rights, run and logbook of `scene.turn_on`. An empty slot runs nothing and is written to the
+  logbook; a slot beyond the number of slots is refused. Moving a favorite in the card re-binds the button.
+- Favorites grid: after the row is shortened in a narrow card the tiles grow to the largest edge that fits, at most
+  `tile_size`, instead of staying at 80 pixels (AD2).
+- The card no longer fails now and then with "Custom element doesn't exist: resident-scenes-card" after a page load:
+  if the frontend puts its own element registry in place after the card was loaded, the card registers itself there
+  as well (AD5).
+- The card tells screen readers "Played" with the name of the scene after a tap on a tile or a play button, through a
+  status field (AD3).
+- A media player counts as TV also by the device class of its state, e.g. set with `customize` (AD4).
+- README: `run_favorite` with an example, "All off" and running scenes, moved devices, how TVs are recognised and how
+  to check it, `capture` and protected installer scenes with two push button examples and an acceptance step, the
+  order of steps and called room scenes, templates with the same key. SECURITY: the new action and rules.
+- Tests: the 0.5.0 review files `test_review_0_5_0.py` and `card_probe_0_5_0_review.cjs` are added with the findings
+  and the notes on moved devices and "All off" marked fixed; `test_stage4c.py`. Tests of 0.3.1, 0.3.2 and stage 2 that
+  ran a moved device on follow the new rule.
+
 ## 0.5.0
 
 Nachbesserung 4b of the functional spec (draft 0.22, sections 4.1, 4.7, 4.13, 5.1, 5.2): the views of the card and

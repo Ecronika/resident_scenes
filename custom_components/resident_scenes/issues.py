@@ -7,11 +7,11 @@ import logging
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EVENT_HOMEASSISTANT_STARTED, EVENT_STATE_CHANGED
 from homeassistant.core import CoreState, Event, HomeAssistant, callback
-from homeassistant.helpers import entity_registry as er, issue_registry as ir
+from homeassistant.helpers import device_registry as dr, entity_registry as er, issue_registry as ir
 from homeassistant.helpers.debounce import Debouncer
 
 from .const import DOMAIN, MUSIC_PLATFORMS
-from .model import entries, music_favorites
+from .model import allowed_entities, entity_area, entries, music_favorites
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -19,10 +19,12 @@ _LOGGER = logging.getLogger(__name__)
 def broken_steps(hass: HomeAssistant, store, scene: dict) -> list[str]:
     """Return what is permanently missing in a scene: devices, called scenes, music favorites.
 
+    Also devices of a room scene that moved to another room; they are skipped when it runs (spec 4.5).
     Unreachable devices are not listed, they usually come back by themselves.
     """
     ent_reg = er.async_get(hass)
     favorites = music_favorites(hass)
+    allowed = allowed_entities(hass, store.entry)
     broken = []
     for step in entries(scene["sequence"]):
         if "scene_id" in step:
@@ -32,6 +34,12 @@ def broken_steps(hass: HomeAssistant, store, scene: dict) -> list[str]:
             broken.append(step["entity_id"])
         elif step.get("music") == "favorite" and favorites and step["favorite_id"] not in favorites:
             broken.append(step.get("favorite_name") or step["favorite_id"])
+        elif (
+            scene["area_id"]
+            and (ent := allowed.get(step["entity_id"]))
+            and entity_area(hass, ent) != scene["area_id"]
+        ):
+            broken.append(step["entity_id"])
     return broken
 
 
@@ -67,7 +75,7 @@ def async_track_issues(hass: HomeAssistant, entry: ConfigEntry, store, now: bool
 
 @callback
 def async_follow_removals(hass: HomeAssistant, entry: ConfigEntry, store) -> None:
-    """Recheck the issues when an entity is removed or the music favorites change (spec 4.10)."""
+    """Recheck the issues when an entity is removed, a device moves or the music favorites change (spec 4.10)."""
 
     @callback
     def track() -> None:
@@ -79,7 +87,12 @@ def async_follow_removals(hass: HomeAssistant, entry: ConfigEntry, store) -> Non
 
     @callback
     def removed(event_data: er.EventEntityRegistryUpdatedData) -> bool:
-        return event_data["action"] == "remove"
+        # also a new room of an entity (spec 4.10)
+        return event_data["action"] == "remove" or "area_id" in event_data.get("changes", {})
+
+    @callback
+    def device_moved(event_data: dr.EventDeviceRegistryUpdatedData) -> bool:
+        return "area_id" in event_data.get("changes", {})
 
     @callback
     def favorites_changed(event_data: dict) -> bool:
@@ -91,6 +104,7 @@ def async_follow_removals(hass: HomeAssistant, entry: ConfigEntry, store) -> Non
         debouncer.async_schedule_call()
 
     entry.async_on_unload(hass.bus.async_listen(er.EVENT_ENTITY_REGISTRY_UPDATED, recheck, event_filter=removed))
+    entry.async_on_unload(hass.bus.async_listen(dr.EVENT_DEVICE_REGISTRY_UPDATED, recheck, event_filter=device_moved))
     entry.async_on_unload(hass.bus.async_listen(EVENT_STATE_CHANGED, recheck, event_filter=favorites_changed))
 
 

@@ -16,7 +16,7 @@ from uuid import uuid4
 from homeassistant.components.http.auth import async_sign_path
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import Event, HomeAssistant, callback
-from homeassistant.helpers import area_registry as ar, entity_registry as er
+from homeassistant.helpers import area_registry as ar, device_registry as dr, entity_registry as er
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util, slugify
@@ -180,11 +180,13 @@ class SceneStore:
             for area_id in gone:
                 self._move_to_house(area_id)
             await self._async_commit()
+        if self._follow_moves():  # devices moved while Home Assistant was stopped
+            await self._async_commit()
         self._drop_room_rights(set(areas.areas))
 
     @callback
     def async_listen(self) -> None:
-        """Follow deleted areas and renamed entity ids."""
+        """Follow deleted areas, renamed entity ids and devices that move to another room."""
         hass = self.hass
         self.entry.async_on_unload(
             hass.bus.async_listen(ar.EVENT_AREA_REGISTRY_UPDATED, self._area_updated)
@@ -192,6 +194,13 @@ class SceneStore:
         self.entry.async_on_unload(
             hass.bus.async_listen(er.EVENT_ENTITY_REGISTRY_UPDATED, self._entity_updated)
         )
+        self.entry.async_on_unload(
+            hass.bus.async_listen(dr.EVENT_DEVICE_REGISTRY_UPDATED, self._device_updated)
+        )
+
+    async def _device_updated(self, event: Event[dr.EventDeviceRegistryUpdatedData]) -> None:
+        if "area_id" in event.data.get("changes", {}) and self._follow_moves():
+            await self._async_commit()
 
     async def _area_updated(self, event: Event[ar.EventAreaRegistryUpdatedData]) -> None:
         if event.data["action"] != "remove":
@@ -215,9 +224,13 @@ class SceneStore:
 
     async def _entity_updated(self, event: Event[er.EventEntityRegistryUpdatedData]) -> None:
         data = event.data
-        if data["action"] != "update" or not (old := data.get("old_entity_id")):
+        if data["action"] != "update":
             return
-        changed = False
+        changed = "area_id" in data.get("changes", {}) and self._follow_moves()
+        if not (old := data.get("old_entity_id")):
+            if changed:
+                await self._async_commit()
+            return
         for scene in self.scenes.values():
             for step in entries(scene["sequence"]):
                 if step.get("entity_id") == old:
@@ -250,6 +263,52 @@ class SceneStore:
                 EVENT_CHANGED, {"scene_id": scene["id"], "name": scene["name"], "action": "moved to house"}
             )
         return bool(moved) or loose
+
+    def _follow_moves(self) -> bool:
+        """Entries of a house scene follow their device into its new room (spec 4.5).
+
+        The entry goes into the next step of that room and domain before the next delay, else into a new
+        step right after its old one; an entry of the device already there wins; a step left empty goes.
+        Steps of a deleted room are left to _move_to_house.
+        """
+        ent_reg, areas = er.async_get(self.hass), ar.async_get(self.hass).areas
+        changed = False
+        for scene in self.scenes.values():
+            if scene["area_id"]:
+                continue  # in a room scene a moved device is skipped, the entry stays (spec 4.5)
+            sequence, index, moved = scene["sequence"], 0, False
+            while index < len(sequence):
+                step = sequence[index]
+                index += 1
+                if step["type"] != "group" or (step["area_id"] and step["area_id"] not in areas):
+                    continue
+                left = False
+                for entry in list(step["entries"]):
+                    ent = ent_reg.async_get(entry["entity_id"])
+                    if ent is None or (area := entity_area(self.hass, ent)) == step["area_id"]:
+                        continue
+                    target = None
+                    for later in sequence[index:]:
+                        if later["type"] == "delay":
+                            break
+                        if later["type"] == "group" and (later["domain"], later["area_id"]) == (step["domain"], area):
+                            target = later
+                            break
+                    if target is None:
+                        target = {"id": new_step_id(sequence), "type": "group", "domain": step["domain"],
+                                  "area_id": area, "entries": []}
+                        sequence.insert(index, target)
+                    if all(e["entity_id"] != entry["entity_id"] for e in target["entries"]):
+                        target["entries"].append(entry)
+                    step["entries"].remove(entry)
+                    left = moved = True
+                if left and not step["entries"]:
+                    index -= 1
+                    del sequence[index]
+            if moved:
+                scene["version"] += 1  # open editors hold the old steps
+                changed = True
+        return changed
 
     def _free_name(self, name: str, area_id: str | None, own_id: str) -> str:
         """Return the name, with a suffix like ' (2)' if another scene of the area has it."""

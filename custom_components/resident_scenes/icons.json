@@ -5,6 +5,9 @@
     },
     "all_off": {
       "service": "mdi:power"
+    },
+    "run_favorite": {
+      "service": "mdi:heart"
     }
   }
 }

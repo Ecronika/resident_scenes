@@ -178,7 +178,8 @@ def entity_area(hass: HomeAssistant, ent: er.RegistryEntry) -> str | None:
 def all_off_steps(hass: HomeAssistant, entry: ConfigEntry, area_id: str) -> list[dict[str, Any]]:
     """Return the steps of "all off" in a room, from what is released there right now (spec 4.13).
 
-    Always the lights; music, TVs (device class tv) and switches only as set for the room.
+    Always the lights; music, TVs (device class tv in the registry or the state) and switches only as set
+    for the room.
     """
     parts = opt(entry, CONF_ALL_OFF).get(area_id, [])
     steps: list[dict[str, Any]] = []
@@ -188,7 +189,10 @@ def all_off_steps(hass: HomeAssistant, entry: ConfigEntry, area_id: str) -> list
         if ent.domain == "light" or (ent.domain == "switch" and "switch" in parts):
             steps.append({"entity_id": eid, "state": "off", "attributes": {}})
         elif ent.domain == "media_player":
-            tv = (ent.device_class or ent.original_device_class) == "tv"
+            # the state also carries a class set by customize (review AD4)
+            state = hass.states.get(eid)
+            state_class = state.attributes.get("device_class") if state else None
+            tv = (ent.device_class or ent.original_device_class or state_class) == "tv"
             if ("tv" if tv else "music") in parts:
                 steps.append({"entity_id": eid, "music": "tv_off" if tv else "off"})
     return steps

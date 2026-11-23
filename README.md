@@ -6,7 +6,7 @@ Scenes are stored by the integration (not in YAML), survive restarts, are part o
 
 Requires Home Assistant 2026.3 or later. The card and the settings are available in English and German.
 
-Features (version 0.5):
+Features (version 0.6):
 
 - a scene editor in the card: every input is saved at once, "Done" ends editing, "New scene" creates a scene at once
 - a scene is a sequence of steps: a trade (light, shading, climate, switches, fans, music, scenes) with its ticked
@@ -19,13 +19,16 @@ Features (version 0.5):
 - live adjustments per step for lights, shading, switches and fans: off on every opening, switching on takes over
   all devices of the step; leaving the editor restores nothing
 - "All off in the house" per trade in house scenes, sorting by dragging
-- house scenes calling room scenes
+- house scenes calling room scenes; steps without a delay between them start together, and a called room scene
+  runs beside the house scene, the house scene does not wait for it
 - music steps for any released media player: off, or on with volume; with Sonos also a Sonos favorite with volume
   (favorites only, no free selection)
 - favorite slots per room and for the house, each count set on its own; shown as square tiles in a grid that fits
-  the card's width
+  the card's width; a slot can be run from a push button (`resident_scenes.run_favorite`)
 - "All off" per room: switches off the released lights of the room, and per room also music, TVs and switches;
-  "All on" is a scene of the room named in the card
+  a scene that is still running does not switch them on again; "All on" is a scene of the room named in the card
+- a device moved to another room drops out of the scenes of its old room (kept, named, back when the device returns)
+  and moves along in house scenes
 - scene images from an installer image library or uploaded and cropped in the card
 - installer scenes (protected, content can be released to residents), loaded from a template
 - edit right for every account that may control devices (not read-only accounts); the installer or a main user can
@@ -35,7 +38,8 @@ Features (version 0.5):
 - undo of the last edit (all inputs from opening the editor to leaving it, or until ten minutes without input); an
   input that changes nothing is no edit
 - device release via a label; locks, alarm panels and configuration entities are never accepted
-- logbook entries for every change, attributed to the account; repair issues for missing devices and scenes.
+- logbook entries for every change, attributed to the account; repair issues for missing devices and scenes and
+  for devices of a room scene that are now in another room.
   "scene created" is written once, under the first entity id (`scene.new_scene_1`); when the id then follows the name in
   the creating edit, that entry stays under the first id
 
@@ -135,6 +139,29 @@ that is missing, unreachable, no longer released or moved to another room keeps 
 scenes stay. Every scene found takes over the same state: with an area or `all` as target, a scene "Dark" in that
 room afterwards switches the lights on as they are now. Automations run without a user and are allowed.
 
+Without a user `capture` also overwrites an installer scene whose content is protected in the card: the protection
+is for residents in the card, not for the installer's own automations. Point a long press only at scenes whose content
+the resident may change. The card can take a capture back with "Undo", like any edit. Two examples for push buttons:
+
+- **KNX scene in the actuator:** the push button calls the scene in the actuator directly; a long press stores the
+  current state there with `knx.save_scene` of the KNX integration. The resident sees it in the card as a scene with
+  the mark "KNX" (if it carries the label) and can run it, but not edit it.
+- **Resident scene on a push button:** one automation runs the same scene entity on a short press (`scene.turn_on`)
+  and takes over the current state on a long press (`resident_scenes.capture`):
+
+```yaml
+triggers:
+  - {trigger: event, event_type: knx_event, event_data: {destination: "1/0/10"}, id: short}
+  - {trigger: event, event_type: knx_event, event_data: {destination: "1/0/11"}, id: long}
+actions:
+  - if: [{condition: trigger, id: short}]
+    then: [{action: scene.turn_on, target: {entity_id: scene.cooking}}]
+    else: [{action: resident_scenes.capture, target: {entity_id: scene.cooking}}]
+```
+
+At hand-over, test it: dim a light to a brightness you can tell apart, press long, change the light, press short;
+the light must come back to the brightness of the long press, and the card shows the new value.
+
 `resident_scenes.all_off` with one or more areas (`area_id`) switches off all released lights of each room, e.g. from a
 KNX push button. What else it takes is set per room by the installer (options, "All off" per room, or the template):
 music (media players that are not TVs; playback stops), TVs (media players of device class `tv`; switched off) and
@@ -144,6 +171,40 @@ light is in without any setting. A call with a user needs the room right of ever
 and switches under that account; calls without a user always run. Every run and every refused call is written to the
 logbook with the room; an unreachable device is skipped and named there. There is no such action for the house: create
 a house scene with "All in the house" off instead.
+
+"All off" also wins over scenes that are still running: a run that began before it no longer switches the devices
+"All off" took, also through a called room scene, e.g. a scene that waits 30 seconds and then switches a light on. These
+entries are skipped and named in the logbook; the other steps of the scene go on, also in other rooms. A run that
+begins after "All off" is not affected.
+
+A media player counts as a TV when Home Assistant gives it the device class `tv`: from the entity registry, or from
+its state, where the installer can set it with `customize` (`device_class: tv`). Every other media player counts as
+music. To check at commissioning, open Developer tools → States, pick the player and look for `device_class: tv`
+in its attributes.
+
+`resident_scenes.run_favorite` runs the scene that lies on a favorite slot at the moment of the call, e.g. from a KNX
+push button. Give either a room (`area_id`) or the house (`house: true`), and the slot (`slot`, counted from 1 as in
+the card). An empty slot runs nothing and is written to the logbook with room and slot, so an empty button is found at
+commissioning; a slot beyond the number of slots is refused. The rights are those of running the scene: a call with a
+user needs the room right, for the house the house right; calls without a user always run. **Moving a favorite
+re-binds the button:** when the resident puts another scene on the slot in the card, the next press runs that scene,
+without a change to the automation or in the ETS. Tell the resident at hand-over. A long press cannot learn into a slot,
+`capture` takes scenes only; for that put the button on a fixed scene.
+
+```yaml
+triggers:
+  - {trigger: event, event_type: knx_event, event_data: {destination: "1/0/20"}}
+actions:
+  - action: resident_scenes.run_favorite
+    data: {area_id: living_room, slot: 1}
+```
+
+**A device moved to another room:** in a room scene the entry stays stored, but it is skipped when the scene runs and
+named in the logbook; the card marks it "In another room" and a repair issue names scene and device. When the device
+returns to the room, the entry applies again and the issue goes. In a house scene the entry moves with its stored value
+into a step of the new room right after its old step, so between the same delays, and the scene switches as before; a
+following step of that room and trade before the next delay takes it, an entry of the device already there wins, and
+a step left empty goes. A device that loses its room moves into a step "No room".
 
 ## Options
 
@@ -192,6 +253,8 @@ template. The settings form does not show room rights, they are kept in the card
 of `music`, `tv` and `switch`; an unknown room or another value refuses the template. A template that names `rooms`
 or `all_off` replaces the stored value as a whole (a room not listed then switches only its lights); a template
 without them keeps it. A template is loaded completely or not at all.
+A template scene with the same `key` as a scene loaded before replaces it; the state before stays, so the card can
+take the change back with "Undo".
 For blinds with slats give `position` and `tilt`: Home Assistant opens the slats fully if only the position is set.
 
 ## Rights and security

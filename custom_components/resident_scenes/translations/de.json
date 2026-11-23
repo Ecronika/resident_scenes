@@ -80,7 +80,7 @@
   "issues": {
     "broken_steps": {
       "title": "In der Szene {scene} fehlt etwas",
-      "description": "Diese Teile der Szene gibt es nicht mehr, beim Auslösen werden sie übersprungen: {items}. Ändern Sie die Szene in der Karte oder stellen Sie die Geräte wieder her."
+      "description": "Diese Teile der Szene gibt es nicht mehr oder sie liegen jetzt in einem anderen Raum, beim Auslösen werden sie übersprungen: {items}. Ändern Sie die Szene in der Karte, stellen Sie die Geräte wieder her oder ordnen Sie sie wieder dem Raum zu."
     }
   },
   "services": {
@@ -97,6 +97,24 @@
           "description": "Die Räume, die ausgeschaltet werden."
         }
       }
+    },
+    "run_favorite": {
+      "name": "Favorit auslösen",
+      "description": "Löst die Szene aus, die gerade auf einem Favoritenplatz eines Raums oder des Hauses liegt, zum Beispiel von einem Taster. Ein leerer Platz löst nichts aus.",
+      "fields": {
+        "area_id": {
+          "name": "Raum",
+          "description": "Der Raum des Platzes, sonst Haus wählen."
+        },
+        "house": {
+          "name": "Haus",
+          "description": "Ein Platz des Hauses statt eines Raums."
+        },
+        "slot": {
+          "name": "Platz",
+          "description": "Der Platz, gezählt ab 1 wie in der Karte."
+        }
+      }
     }
   },
   "exceptions": {
@@ -108,6 +126,9 @@
     },
     "unknown_area": {
       "message": "Unbekannter Raum: {area}"
+    },
+    "invalid_slot": {
+      "message": "Unbekannter Favoritenplatz: {slot}"
     }
   }
 }

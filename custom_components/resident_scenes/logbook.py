@@ -12,7 +12,7 @@ from homeassistant.components.logbook import (
 )
 from homeassistant.core import Event, HomeAssistant, callback
 
-from .const import DOMAIN, EVENT_ALL_OFF, EVENT_CHANGED, EVENT_RIGHTS, EVENT_SKIPPED
+from .const import DOMAIN, EVENT_ALL_OFF, EVENT_CHANGED, EVENT_FAVORITE, EVENT_RIGHTS, EVENT_SKIPPED
 
 
 @callback
@@ -58,7 +58,18 @@ def async_describe_events(
         message = "all off not run: no right for this room" if event.data["refused"] else "all off"
         return {LOGBOOK_ENTRY_NAME: event.data["name"], LOGBOOK_ENTRY_MESSAGE: message}
 
+    @callback
+    def describe_favorite(event: Event) -> dict[str, Any]:
+        # an empty slot is no error; the installer finds an empty push button here (spec 4.14)
+        slot = event.data["slot"]
+        if event.data["result"] == "refused":
+            message = f"favorite slot {slot} not run: no right for this room"
+        else:
+            message = f"favorite slot {slot} is empty, nothing run"
+        return {LOGBOOK_ENTRY_NAME: event.data["name"], LOGBOOK_ENTRY_MESSAGE: message}
+
     async_describe_event(DOMAIN, EVENT_ALL_OFF, describe_all_off)
+    async_describe_event(DOMAIN, EVENT_FAVORITE, describe_favorite)
     async_describe_event(DOMAIN, EVENT_RIGHTS, describe_rights)
     async_describe_event(DOMAIN, EVENT_CHANGED, describe_changed)
     async_describe_event(DOMAIN, EVENT_SKIPPED, describe_skipped)

@@ -10,3 +10,19 @@ all_off:
       selector:
         area:
           multiple: true
+run_favorite:
+  fields:
+    area_id:
+      selector:
+        area:
+    house:
+      selector:
+        boolean:
+    slot:
+      required: true
+      default: 1
+      selector:
+        number:
+          min: 1
+          max: 12
+          mode: box

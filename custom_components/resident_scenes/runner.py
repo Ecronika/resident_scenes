@@ -21,7 +21,7 @@ from homeassistant.helpers.script import SCRIPT_MODE_RESTART, Script
 from homeassistant.helpers.state import async_reproduce_state
 
 from .const import DOMAIN, EVENT_BATCH, EVENT_SKIPPED
-from .model import allowed_entities, music_favorites, step_key
+from .model import allowed_entities, entity_area, music_favorites, step_key
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -60,6 +60,10 @@ class SceneRunner:
         self._scripts: dict[str, tuple[int, Script, list]] = {}
         # context id -> scenes already started by that trigger; each runs once per trigger (review T1)
         self._chains: dict[str, set[str]] = {}
+        # "all off" overtakes runs that began before it (spec 4.13): a counter orders starts and "all off"
+        self._clock = 0
+        self._started: dict[str, int] = {}  # context id of a trigger -> its start
+        self._all_off: dict[str, int] = {}  # entity id -> the last "all off" that took it
         entry.async_on_unload(hass.bus.async_listen(EVENT_BATCH, self._batch))
         entry.async_on_unload(self._stop_all)
 
@@ -83,9 +87,13 @@ class SceneRunner:
                 user_id=context.user_id if context else None, parent_id=context.id if context else None
             )
             self._chains[context.id] = {scene_id}
+            self._clock += 1
+            self._started[context.id] = self._clock
             # shortcut: keeps the chains of the last 100 triggers, enough for delays of running scenes
             while len(self._chains) > 100:
                 del self._chains[next(iter(self._chains))]
+            while len(self._started) > 100:
+                del self._started[next(iter(self._started))]
         version, script, _ = self._scripts.get(scene_id, (None, None, None))
         if script is None or version != scene["version"]:
             if script is not None:
@@ -122,11 +130,22 @@ class SceneRunner:
             return
         await self.async_apply(scene, groups[index][1], event.context)
 
+    async def async_all_off(self, scene: dict[str, Any], steps: list[dict[str, Any]], context: Context | None) -> None:
+        """Run "all off"; runs that began before it no longer switch these devices (spec 4.13)."""
+        self._clock += 1
+        for step in steps:
+            self._all_off[step["entity_id"]] = self._clock
+        await self.async_apply(scene, steps, context)
+
     async def async_apply(
         self, scene: dict[str, Any], steps: list[dict[str, Any]], context: Context | None
     ) -> None:
-        """Apply steps together, skipping unreachable, missing or unreleased devices."""
+        """Apply steps together, skipping unreachable, missing, unreleased or moved devices.
+
+        Also skipped: devices that "all off" took after this trigger began (spec 4.13).
+        """
         hass = self.hass
+        started = self._started.get(context.id) if context else None
         favorites = music_favorites(hass)
         allowed = allowed_entities(hass, self.entry)
         ent_reg = er.async_get(hass)
@@ -148,7 +167,14 @@ class SceneRunner:
                 continue
             entity_id = step["entity_id"]
             current = hass.states.get(entity_id)
-            if entity_id not in allowed or current is None or current.state == STATE_UNAVAILABLE:
+            if (
+                entity_id not in allowed
+                or current is None
+                or current.state == STATE_UNAVAILABLE
+                # a device moved out of a room scene's room is skipped, the entry stays (spec 4.5)
+                or (scene.get("area_id") and entity_area(hass, allowed[entity_id]) != scene["area_id"])
+                or (started is not None and self._all_off.get(entity_id, 0) > started)
+            ):
                 skipped.append(entity_id)
             elif step.get("call"):
                 call = hass.services.async_call(

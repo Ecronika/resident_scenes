@@ -155,13 +155,19 @@ async def test_moved_device_in_a_step_without_a_room(hass, setup, hass_ws_client
     er.async_get(hass).async_update_entity("light.kitchen", area_id="hall")
     await hass.async_block_till_done()
     step = setup.runtime_data.scenes[sid]["sequence"][0]
-    assert step["area_id"] is None
-    assert (await call(**cmd("set_all", sid, step_id=step["id"], mode="capture")))["success"]
-    await hass.services.async_call(DOMAIN, "capture", {"entity_id": eid(hass, sid)}, blocking=True)
+    # CHANGED in 0.6.0 (spec 4.5, draft 0.24): in the house scene the entry follows the device into the hall
+    assert step["area_id"] == "hall"
     entry = flat(setup.runtime_data.scenes[sid])[0]
     assert (entry["entity_id"], entry["attributes"]["brightness"]) == ("light.kitchen", 10)  # OK: the value stays
     shown = (await call(type=f"{DOMAIN}/scene", scene_id=sid))["result"]["sequence"][0]["entries"][0]
-    assert shown["issue"] == "other_area"  # OK
+    assert shown["issue"] is None  # CHANGED in 0.6.0: no longer in another room
+    # losing its room it follows into a step without a room, where "Alle", capture and remove work
+    er.async_get(hass).async_update_entity("light.kitchen", area_id=None)
+    await hass.async_block_till_done()
+    step = setup.runtime_data.scenes[sid]["sequence"][0]
+    assert step["area_id"] is None
+    assert (await call(**cmd("set_all", sid, step_id=step["id"], mode="capture")))["success"]
+    await hass.services.async_call(DOMAIN, "capture", {"entity_id": eid(hass, sid)}, blocking=True)
     assert (await call(**cmd("remove_entry", sid, step_id=step["id"], entity_id="light.kitchen")))["success"]  # OK
 
 

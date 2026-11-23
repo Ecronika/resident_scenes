@@ -4,7 +4,7 @@ import { LitElement, html, css, nothing } from "lit";
 import { live } from "lit/directives/live.js";
 import { repeat } from "lit/directives/repeat.js";
 
-const VERSION = "0.5.0"; // must match the integration (checked by tests)
+const VERSION = "0.6.0"; // must match the integration (checked by tests)
 const WS = "resident_scenes";
 const HOUSE = "_house";
 const DOMAINS = ["light", "cover", "climate", "switch", "fan", "media_player", "scene"];
@@ -134,6 +134,7 @@ class ResidentScenesCard extends LitElement {
     _offline: { state: true },
     _undone: { state: true },
     _announce: { state: true },
+    _ran: { state: true },
     _width: { state: true },
   };
 
@@ -390,13 +391,19 @@ class ResidentScenesCard extends LitElement {
     return areaId ? this.hass.areas?.[areaId]?.name ?? areaId : this._t("house");
   }
 
-  async _play(entityId) {
+  // short feedback (V9), also for screen readers through the status field (review AD3)
+  _ranFeedback(key, name) {
+    this._played = key;
+    this._ran = `${this._t("played")}: ${name}`;
+    setTimeout(() => this._played === key && ((this._played = null), (this._ran = null)), 1500);
+  }
+
+  async _play(entityId, name) {
     if (!entityId) return;
     try {
       await this.hass.callService("scene", "turn_on", { entity_id: entityId });
       if (this._notice === "play_failed") this._notice = null;
-      this._played = entityId; // short feedback (V9)
-      setTimeout(() => this._played === entityId && (this._played = null), 1500);
+      this._ranFeedback(entityId, name ?? this._name(entityId, ""));
     } catch (err) {
       this._notice = "play_failed";
     }
@@ -408,8 +415,7 @@ class ResidentScenesCard extends LitElement {
     try {
       await this.hass.callService(WS, "all_off", { area_id: this._config.area });
       if (this._notice === "all_off_failed") this._notice = null;
-      this._played = key;
-      setTimeout(() => this._played === key && (this._played = null), 1500);
+      this._ranFeedback(key, this._t("all_off_tile"));
     } catch (err) {
       this._notice = "all_off_failed";
     }
@@ -455,6 +461,7 @@ class ResidentScenesCard extends LitElement {
         : nothing}
       ${this._stale ? html`<p class="muted" role="status">${this._t("stale")}</p>` : nothing}
       ${this._notice ? html`<p class="error" role="alert">${this._t(this._notice)}</p>` : nothing} ${body}
+      <p class="sr" role="status">${this._ran ?? nothing}</p>
     </div>`;
   }
 
@@ -467,7 +474,8 @@ class ResidentScenesCard extends LitElement {
   }
 
   // edge and tiles per row (spec 5.2): tile_size at most, columns or as many as fit, down to 80 px,
-  // then fewer per row; several rows are filled evenly. `side` is the column of "Alles ein" and "Alles aus".
+  // then fewer per row, as large as they fit; several rows are filled evenly.
+  // `side` is the column of "Alles ein" and "Alles aus".
   _grid(count, side) {
     const { columns, tile_size: want } = this._config;
     const extra = side ? 1 : 0;
@@ -475,13 +483,11 @@ class ResidentScenesCard extends LitElement {
     const avail = this._width ? this._width - 34 : Infinity;
     const fits = (edge) => Math.max(1, Math.floor((avail + GAP) / (edge + GAP)) - extra);
     let perRow = Math.min(columns === "auto" ? fits(want) : columns, Math.max(1, count));
-    let edge = Math.min(want, Math.floor((avail - GAP * (perRow - 1 + extra)) / (perRow + extra)));
-    if (edge < MIN_TILE) {
-      edge = MIN_TILE;
-      perRow = Math.min(perRow, fits(MIN_TILE));
-    }
-    const rows = Math.max(1, Math.ceil(count / perRow));
-    return { edge, perRow: Math.max(1, Math.ceil(count / rows)) };
+    const edgeFor = (n) => Math.min(want, Math.floor((avail - GAP * (n - 1 + extra)) / (n + extra)));
+    if (edgeFor(perRow) < MIN_TILE) perRow = Math.min(perRow, fits(MIN_TILE));
+    perRow = Math.max(1, Math.ceil(count / Math.max(1, Math.ceil(count / perRow)))); // rows filled evenly
+    // a shorter row has room for larger tiles: the largest that fits, at most tile_size (review AD2)
+    return { edge: Math.max(MIN_TILE, edgeFor(perRow)), perRow };
   }
 
   _tile(action, label, onClick, key, image, cls = "") {
@@ -501,14 +507,14 @@ class ResidentScenesCard extends LitElement {
     const { edge, perRow } = this._grid(tiles.length, side);
     const favs = tiles.length
       ? html`<div class="tiles" style="grid-template-columns: repeat(${perRow}, ${edge}px)">
-          ${tiles.map((s) => this._tile("play", s.name, () => this._play(s.entity_id), s.entity_id,
+          ${tiles.map((s) => this._tile("play", s.name, () => this._play(s.entity_id, s.name), s.entity_id,
             s.image_url ? html`<img src=${s.image_url} alt="" />` : PLACEHOLDER))}
         </div>`
       : nothing;
     return html`<div class="fav ${side ? "with-side" : ""}" style="--tile: ${edge}px">
       ${side
         ? html`<div class="side">
-            ${on ? this._tile("all-on", on.name, () => this._play(on.entity_id), on.entity_id, POWER, "power on") : nothing}
+            ${on ? this._tile("all-on", on.name, () => this._play(on.entity_id, on.name), on.entity_id, POWER, "power on") : nothing}
             ${off ? this._tile("all-off", this._t("all_off_tile"), () => this._allOff(), `all_off:${this._config.area}`, POWER, "power") : nothing}
           </div>`
         : nothing}
@@ -532,7 +538,7 @@ class ResidentScenesCard extends LitElement {
   _playButton(eid, label = false, name = "") {
     const done = this._played === eid;
     return html`<button class=${label ? "primary" : "icon"} data-action="play" aria-label=${name ? `${this._t("play")}: ${name}` : this._t("play")}
-      @click=${() => this._play(eid)}>${done ? "✓" : "▶"}${label ? ` ${this._t(done ? "played" : "play")}` : ""}</button>`;
+      @click=${() => this._play(eid, name || undefined)}>${done ? "✓" : "▶"}${label ? ` ${this._t(done ? "played" : "play")}` : ""}</button>`;
   }
 
   _renderList() {
@@ -1541,6 +1547,16 @@ class ResidentScenesCard extends LitElement {
   `;
 }
 
-customElements.define("resident-scenes-card", ResidentScenesCard);
+// The frontend may put its own element registry in place after this module ran (extra modules start beside it),
+// so the card is registered again in whatever registry window.customElements is, until the frontend is up.
+const register = () => {
+  const registry = window.customElements;
+  if (!registry.get("resident-scenes-card")) registry.define("resident-scenes-card", ResidentScenesCard);
+  return !!registry.get("home-assistant");
+};
+if (!register()) {
+  const timer = setInterval(() => register() && clearInterval(timer), 100);
+  setTimeout(() => clearInterval(timer), 60000);
+}
 window.customCards = window.customCards || [];
 window.customCards.push({ type: "resident-scenes-card", name: "Resident Scenes", description: "Create, edit and run resident scenes" });

@@ -13,11 +13,27 @@ from homeassistant.config_entries import ConfigEntry, ConfigEntryState
 from homeassistant.const import ATTR_AREA_ID, Platform
 from homeassistant.core import HomeAssistant, ServiceCall, callback
 from homeassistant.exceptions import ServiceValidationError, Unauthorized
-from homeassistant.helpers import area_registry as ar, config_validation as cv, label_registry as lr, service
+from homeassistant.helpers import (
+    area_registry as ar,
+    config_validation as cv,
+    entity_registry as er,
+    label_registry as lr,
+    service,
+)
 from homeassistant.helpers.dispatcher import async_dispatcher_connect, async_dispatcher_send
 from homeassistant.helpers.typing import ConfigType
 
-from .const import CARD_URL, CONF_LABEL, DOMAIN, EVENT_ALL_OFF, EVENT_CHANGED, SIGNAL_CHANGED, VERSION
+from .const import (
+    CARD_URL,
+    CONF_LABEL,
+    DOMAIN,
+    EVENT_ALL_OFF,
+    EVENT_CHANGED,
+    EVENT_FAVORITE,
+    HOUSE,
+    SIGNAL_CHANGED,
+    VERSION,
+)
 from .http import ImageView, PhotoView, UploadView
 from .issues import async_delete_issues, async_follow_removals, async_track_issues
 from .model import ValidationError, all_off_steps, can_edit, may_edit, may_see, opt
@@ -31,6 +47,18 @@ PLATFORMS = [Platform.SCENE]
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 # one or more rooms; other keys a frontend may add are ignored
 ALL_OFF_SCHEMA = vol.Schema({vol.Required(ATTR_AREA_ID): vol.All(cv.ensure_list, [cv.string])}, extra=vol.ALLOW_EXTRA)
+# a room or the house, exactly one, and a slot from 1 as in the card (spec 4.14)
+RUN_FAVORITE_SCHEMA = vol.All(
+    vol.Schema(
+        {
+            vol.Exclusive(ATTR_AREA_ID, "target"): cv.string,
+            vol.Exclusive("house", "target"): vol.All(cv.boolean, vol.IsTrue()),
+            vol.Required("slot"): vol.All(vol.Coerce(int), vol.Range(min=1)),
+        },
+        extra=vol.ALLOW_EXTRA,
+    ),
+    cv.has_at_least_one_key(ATTR_AREA_ID, "house"),
+)
 
 type ResidentScenesConfigEntry = ConfigEntry[SceneStore]
 
@@ -52,7 +80,49 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
         hass, DOMAIN, "capture", entity_domain=Platform.SCENE, schema=None, func=_async_capture
     )
     hass.services.async_register(DOMAIN, "all_off", _async_all_off, schema=ALL_OFF_SCHEMA)
+    hass.services.async_register(DOMAIN, "run_favorite", _async_run_favorite, schema=RUN_FAVORITE_SCHEMA)
     return True
+
+
+def _loaded_store(hass: HomeAssistant) -> tuple[ConfigEntry, SceneStore]:
+    entry = next((e for e in hass.config_entries.async_entries(DOMAIN) if e.state is ConfigEntryState.LOADED), None)
+    if entry is None:
+        raise ServiceValidationError(translation_domain=DOMAIN, translation_key="not_loaded")
+    return entry, entry.runtime_data
+
+
+async def _async_run_favorite(call: ServiceCall) -> None:
+    """Run the scene that lies on a favorite slot of a room or the house right now (spec 4.14).
+
+    The right is that of running the scene: room right, for the house the house right. Calls without
+    a user always run. An empty slot runs nothing and is named in the logbook.
+    """
+    hass = call.hass
+    entry, store = _loaded_store(hass)
+    area_id = call.data.get(ATTR_AREA_ID)
+    area = ar.async_get(hass).async_get_area(area_id) if area_id else None
+    if area_id and area is None:
+        raise ServiceValidationError(
+            translation_domain=DOMAIN, translation_key="unknown_area", translation_placeholders={"area": area_id}
+        )
+    slots = store.slots(area_id or HOUSE)
+    if not 1 <= (slot := call.data["slot"]) <= len(slots):
+        raise ServiceValidationError(
+            translation_domain=DOMAIN, translation_key="invalid_slot", translation_placeholders={"slot": str(slot)}
+        )
+    data = {"area_id": area_id, "name": area.name if area else "House", "slot": slot}
+    user = await hass.auth.async_get_user(call.context.user_id) if call.context.user_id else None
+    if user is not None and not may_see(hass, entry, user, area_id):
+        _LOGGER.warning("Favorite %s of %s not run: %s has no right for it", slot, data["name"], user.name)
+        hass.bus.async_fire(EVENT_FAVORITE, {**data, "result": "refused"}, context=call.context)
+        raise Unauthorized(context=call.context)
+    scene_id = slots[slot - 1]
+    entity_id = er.async_get(hass).async_get_entity_id("scene", DOMAIN, scene_id) if scene_id else None
+    if entity_id is None:
+        hass.bus.async_fire(EVENT_FAVORITE, {**data, "result": "empty"}, context=call.context)
+        return
+    # the same run, check, logbook and scene state as scene.turn_on (spec 4.14)
+    await hass.services.async_call("scene", "turn_on", {"entity_id": entity_id}, blocking=True, context=call.context)
 
 
 async def _async_all_off(call: ServiceCall) -> None:
@@ -62,10 +132,7 @@ async def _async_all_off(call: ServiceCall) -> None:
     right is not needed. Calls without a user (automations, KNX push buttons) always run.
     """
     hass = call.hass
-    entry = next((e for e in hass.config_entries.async_entries(DOMAIN) if e.state is ConfigEntryState.LOADED), None)
-    if entry is None:
-        raise ServiceValidationError(translation_domain=DOMAIN, translation_key="not_loaded")
-    store: SceneStore = entry.runtime_data
+    entry, store = _loaded_store(hass)
     areas = ar.async_get(hass)
     rooms = list(dict.fromkeys(call.data[ATTR_AREA_ID]))
     if unknown := [a for a in rooms if areas.async_get_area(a) is None]:
@@ -83,7 +150,7 @@ async def _async_all_off(call: ServiceCall) -> None:
         hass.bus.async_fire(EVENT_ALL_OFF, {"area_id": area_id, "name": name, "refused": False}, context=call.context)
         # skipped and failed devices go to the logbook under this name
         scene = {"id": f"all_off:{area_id}", "name": f"All off {name}"}
-        await store.runner.async_apply(scene, all_off_steps(hass, entry, area_id), call.context)
+        await store.runner.async_all_off(scene, all_off_steps(hass, entry, area_id), call.context)
 
 
 async def _async_capture(entity: Any, call: ServiceCall) -> None:

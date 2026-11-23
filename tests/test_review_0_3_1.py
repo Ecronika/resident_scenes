@@ -79,17 +79,17 @@ async def test_x3_devices_of_a_deleted_room_get_a_room_again(hass, setup, hass_w
     er.async_get(hass).async_update_entity("light.kitchen", area_id="hall")  # the light now belongs to the hall
     await hass.async_block_till_done()
     shown = (await call(type=f"{DOMAIN}/scene", scene_id=sid))["result"]["sequence"][0]
-    assert shown["area_id"] is None
-    assert shown["entries"][0]["issue"] == "other_area"  # FIXED: the server sees the reason
+    # CHANGED in 0.6.0 (spec 4.5, draft 0.24): in the house scene the entry follows the device into the hall
+    assert shown["area_id"] == "hall"
+    assert shown["entries"][0]["issue"] is None
     devices = (await call(type=f"{DOMAIN}/devices"))["result"]["entities"]
     assert next(d for d in devices if d["entity_id"] == "light.kitchen")["area_id"] == "hall"
-    # the card shows the entry with "In anderem Raum" (card probe); the server refuses a new value
-    res = await call(**cmd("set_entry", sid, step_id=shown["id"], entity_id="light.kitchen", mode="set",
-                           values={"brightness": 77}))
-    assert res["error"]["code"] == "entity_not_allowed"  # FIXED
     await hass.services.async_call("scene", "turn_on", {"entity_id": eid(hass, sid)}, blocking=True)
     await hass.async_block_till_done(wait_background_tasks=True)
     assert on[-1].data["brightness"] == 10  # OK: the scene runs with the stored value
+    res = await call(**cmd("set_entry", sid, step_id=shown["id"], entity_id="light.kitchen", mode="set",
+                           values={"brightness": 77}))
+    assert res["success"]  # CHANGED in 0.6.0: the entry stands in the step of its room and can be changed
 
 
 async def test_room_deleted_while_stopped(hass, hass_storage, setup):
@@ -112,7 +112,10 @@ async def test_room_deleted_while_stopped(hass, hass_storage, setup):
     await hass.async_block_till_done()
     scenes = setup.runtime_data.scenes
     assert scenes["r"]["area_id"] is None and scenes["r"]["sequence"][0]["area_id"] is None  # OK
-    assert scenes["h"]["sequence"][0]["area_id"] is None and scenes["h"]["version"] == 5  # OK: also in a house scene
+    assert scenes["r"]["version"] == 5
+    # CHANGED in 0.6.0 (spec 4.5, draft 0.24): the light lies in the kitchen, so its entry follows it there
+    assert [(s["area_id"], s["entries"]) for s in scenes["h"]["sequence"]] == [("kitchen", [entry])]
+    assert scenes["h"]["version"] == 6
 
 
 # ---------- the edit (W3, W5) ----------

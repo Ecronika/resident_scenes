@@ -3,7 +3,7 @@
 from typing import Final
 
 DOMAIN: Final = "resident_scenes"
-VERSION: Final = "0.5.0"  # keep in sync with manifest.json and the card (checked by tests)
+VERSION: Final = "0.6.0"  # keep in sync with manifest.json and the card (checked by tests)
 
 STORAGE_KEY: Final = f"{DOMAIN}.data"
 STORAGE_VERSION: Final = 3
@@ -14,6 +14,7 @@ EVENT_CHANGED: Final = f"{DOMAIN}_changed"
 EVENT_SKIPPED: Final = f"{DOMAIN}_skipped"
 EVENT_RIGHTS: Final = f"{DOMAIN}_rights"
 EVENT_ALL_OFF: Final = f"{DOMAIN}_all_off"
+EVENT_FAVORITE: Final = f"{DOMAIN}_favorite"  # run_favorite on an empty slot or refused (spec 4.14)
 EVENT_BATCH: Final = f"{DOMAIN}_batch"  # fired by the script helper, runs one batch of steps
 
 CARD_URL: Final = f"/{DOMAIN}/resident-scenes-card.js"

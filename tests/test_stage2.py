@@ -177,7 +177,8 @@ async def test_step_marks(hass, setup, hass_ws_client, hass_access_token) -> Non
     assert steps[-1]["favorite_name"] == "Old radio"
     await store.async_set_favorite(kitchen, 0, sid)  # any commit re-checks the issues
     issue = ir.async_get(hass).async_get_issue(DOMAIN, f"broken_{sid}")
-    assert issue.translation_placeholders["items"] == "light.gone, Old radio"
+    # a device in another room is named too since 0.6.0 (spec 4.10, draft 0.24)
+    assert issue.translation_placeholders["items"] == "light.gone, light.hall, Old radio"
     assert (await call(type=f"{DOMAIN}/undo", scene_id="nope", version=1))["error"]["code"] == "not_found"
     assert (await call(type=f"{DOMAIN}/scene", scene_id="nope"))["error"]["code"] == "not_found"
 

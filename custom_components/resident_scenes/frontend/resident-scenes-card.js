@@ -731,7 +731,7 @@
   });
 
   // src/resident-scenes-card.js
-  var VERSION = "0.5.0";
+  var VERSION = "0.6.0";
   var WS = "resident_scenes";
   var HOUSE = "_house";
   var DOMAINS = ["light", "cover", "climate", "switch", "fan", "media_player", "scene"];
@@ -1259,13 +1259,18 @@
     _areaName(areaId) {
       return areaId ? this.hass.areas?.[areaId]?.name ?? areaId : this._t("house");
     }
-    async _play(entityId) {
+    // short feedback (V9), also for screen readers through the status field (review AD3)
+    _ranFeedback(key, name) {
+      this._played = key;
+      this._ran = `${this._t("played")}: ${name}`;
+      setTimeout(() => this._played === key && (this._played = null, this._ran = null), 1500);
+    }
+    async _play(entityId, name) {
       if (!entityId) return;
       try {
         await this.hass.callService("scene", "turn_on", { entity_id: entityId });
         if (this._notice === "play_failed") this._notice = null;
-        this._played = entityId;
-        setTimeout(() => this._played === entityId && (this._played = null), 1500);
+        this._ranFeedback(entityId, name ?? this._name(entityId, ""));
       } catch (err) {
         this._notice = "play_failed";
       }
@@ -1276,8 +1281,7 @@
       try {
         await this.hass.callService(WS, "all_off", { area_id: this._config.area });
         if (this._notice === "all_off_failed") this._notice = null;
-        this._played = key;
-        setTimeout(() => this._played === key && (this._played = null), 1500);
+        this._ranFeedback(key, this._t("all_off_tile"));
       } catch (err) {
         this._notice = "all_off_failed";
       }
@@ -1313,6 +1317,7 @@
             <button data-action="reload" @click=${() => location.reload()}>${this._t("reload_btn")}</button></div>` : A}
       ${this._stale ? b2`<p class="muted" role="status">${this._t("stale")}</p>` : A}
       ${this._notice ? b2`<p class="error" role="alert">${this._t(this._notice)}</p>` : A} ${body}
+      <p class="sr" role="status">${this._ran ?? A}</p>
     </div>`;
     }
     // the scene of the tile "Alles ein": its id, tpl_<key> of an installer scene, or the entity id of a released scene
@@ -1322,20 +1327,18 @@
       return this._data.scenes.find((s5) => s5.id === id || s5.entity_id === id) ?? this._data.foreign_scenes.find((s5) => s5.entity_id === id && s5.area_id === this._config.area) ?? null;
     }
     // edge and tiles per row (spec 5.2): tile_size at most, columns or as many as fit, down to 80 px,
-    // then fewer per row; several rows are filled evenly. `side` is the column of "Alles ein" and "Alles aus".
+    // then fewer per row, as large as they fit; several rows are filled evenly.
+    // `side` is the column of "Alles ein" and "Alles aus".
     _grid(count, side) {
       const { columns, tile_size: want } = this._config;
       const extra = side ? 1 : 0;
       const avail = this._width ? this._width - 34 : Infinity;
-      const fits = (edge2) => Math.max(1, Math.floor((avail + GAP) / (edge2 + GAP)) - extra);
+      const fits = (edge) => Math.max(1, Math.floor((avail + GAP) / (edge + GAP)) - extra);
       let perRow = Math.min(columns === "auto" ? fits(want) : columns, Math.max(1, count));
-      let edge = Math.min(want, Math.floor((avail - GAP * (perRow - 1 + extra)) / (perRow + extra)));
-      if (edge < MIN_TILE) {
-        edge = MIN_TILE;
-        perRow = Math.min(perRow, fits(MIN_TILE));
-      }
-      const rows = Math.max(1, Math.ceil(count / perRow));
-      return { edge, perRow: Math.max(1, Math.ceil(count / rows)) };
+      const edgeFor = (n4) => Math.min(want, Math.floor((avail - GAP * (n4 - 1 + extra)) / (n4 + extra)));
+      if (edgeFor(perRow) < MIN_TILE) perRow = Math.min(perRow, fits(MIN_TILE));
+      perRow = Math.max(1, Math.ceil(count / Math.max(1, Math.ceil(count / perRow))));
+      return { edge: Math.max(MIN_TILE, edgeFor(perRow)), perRow };
     }
     _tile(action, label, onClick, key, image, cls = "") {
       const done = this._played === key;
@@ -1354,14 +1357,14 @@
           ${tiles.map((s5) => this._tile(
         "play",
         s5.name,
-        () => this._play(s5.entity_id),
+        () => this._play(s5.entity_id, s5.name),
         s5.entity_id,
         s5.image_url ? b2`<img src=${s5.image_url} alt="" />` : PLACEHOLDER
       ))}
         </div>` : A;
       return b2`<div class="fav ${side ? "with-side" : ""}" style="--tile: ${edge}px">
       ${side ? b2`<div class="side">
-            ${on ? this._tile("all-on", on.name, () => this._play(on.entity_id), on.entity_id, POWER, "power on") : A}
+            ${on ? this._tile("all-on", on.name, () => this._play(on.entity_id, on.name), on.entity_id, POWER, "power on") : A}
             ${off ? this._tile("all-off", this._t("all_off_tile"), () => this._allOff(), `all_off:${this._config.area}`, POWER, "power") : A}
           </div>` : A}
       ${favs}
@@ -1380,7 +1383,7 @@
     _playButton(eid, label = false, name = "") {
       const done = this._played === eid;
       return b2`<button class=${label ? "primary" : "icon"} data-action="play" aria-label=${name ? `${this._t("play")}: ${name}` : this._t("play")}
-      @click=${() => this._play(eid)}>${done ? "\u2713" : "\u25B6"}${label ? ` ${this._t(done ? "played" : "play")}` : ""}</button>`;
+      @click=${() => this._play(eid, name || void 0)}>${done ? "\u2713" : "\u25B6"}${label ? ` ${this._t(done ? "played" : "play")}` : ""}</button>`;
     }
     _renderList() {
       const manage = this._config.view === "manage";
@@ -2178,6 +2181,7 @@
     _offline: { state: true },
     _undone: { state: true },
     _announce: { state: true },
+    _ran: { state: true },
     _width: { state: true }
   });
   __publicField(ResidentScenesCard, "styles", i`
@@ -2283,7 +2287,15 @@
     .tile span { position: relative; width: 100%; padding: 24px 8px 8px; color: #fff; text-align: left; box-sizing: border-box;
       background: linear-gradient(transparent, rgba(0, 0, 0, .7)); text-shadow: 0 1px 2px rgba(0, 0, 0, .8); }
   `);
-  customElements.define("resident-scenes-card", ResidentScenesCard);
+  var register = () => {
+    const registry = window.customElements;
+    if (!registry.get("resident-scenes-card")) registry.define("resident-scenes-card", ResidentScenesCard);
+    return !!registry.get("home-assistant");
+  };
+  if (!register()) {
+    const timer = setInterval(() => register() && clearInterval(timer), 100);
+    setTimeout(() => clearInterval(timer), 6e4);
+  }
   window.customCards = window.customCards || [];
   window.customCards.push({ type: "resident-scenes-card", name: "Resident Scenes", description: "Create, edit and run resident scenes" });
 })();

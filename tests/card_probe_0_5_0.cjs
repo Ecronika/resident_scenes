@@ -41,7 +41,7 @@ async function at(card, width) {
   for (const extra of [{ columns: 4 }, {}]) {
     const card = await make(filled(4), { scope: "area", area: "r1", view: "favorites", ...extra });
     same(await at(card, 500), { perRow: 4, edge: 104 }, `500 px ${JSON.stringify(extra)}: four in a row`);
-    same(await at(card, 360), { perRow: 2, edge: extra.columns ? 80 : 104 }, `360 px ${JSON.stringify(extra)}: two and two`);
+    same(await at(card, 360), { perRow: 2, edge: 104 }, `360 px ${JSON.stringify(extra)}: two and two`); // review AD2
   }
   // even rows: five as three and two, six as three and three
   {
