@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "Resident Scenes",
-        "description": "Bewohner ohne Administratorrecht legen Szenen in einer Dashboard-Karte an und ändern sie."
+        "description": "Bewohner ohne Administratorrecht legen Szenen und Zeitpläne in einer Dashboard-Karte an und ändern sie."
       }
     },
     "abort": {
@@ -36,6 +36,7 @@
           "name_length": "Längster Name",
           "favorite_slots": "Favoritenplätze je Raum",
           "house_favorite_slots": "Favoritenplätze fürs Haus",
+          "schedules": "Zeitpläne (ganze Anlage)",
           "image_dir": "Ordner der Bildbibliothek (im Konfigurationsordner)",
           "image_side": "Hochgeladene Bilder: längste Seite (Pixel)",
           "image_kb": "Hochgeladene Bilder: größte Datei (kB)",
@@ -81,6 +82,14 @@
     "broken_steps": {
       "title": "In der Szene {scene} fehlt etwas",
       "description": "Diese Teile der Szene gibt es nicht mehr oder sie liegen jetzt in einem anderen Raum, beim Auslösen werden sie übersprungen: {items}. Ändern Sie die Szene in der Karte, stellen Sie die Geräte wieder her oder ordnen Sie sie wieder dem Raum zu."
+    },
+    "schedule_scene_missing": {
+      "title": "Zeitplan {schedule} läuft nicht",
+      "description": "Die Szene {scene} dieses Zeitplans gibt es nicht mehr, deshalb läuft der Zeitplan nicht. Wählen Sie in der Karte eine andere Szene, oder schalten Sie den Zeitplan aus oder löschen Sie ihn."
+    },
+    "schedule_not_released": {
+      "title": "Zeitplan {schedule} läuft nicht",
+      "description": "Die Szene {scene} dieses Zeitplans trägt das Label der Freigabe nicht mehr, deshalb läuft der Zeitplan nicht. Geben Sie der Szene das Label wieder, wählen Sie in der Karte eine andere Szene, oder schalten Sie den Zeitplan aus."
     }
   },
   "services": {
@@ -129,6 +138,13 @@
     },
     "invalid_slot": {
       "message": "Unbekannter Favoritenplatz: {slot}"
+    }
+  },
+  "entity": {
+    "switch": {
+      "schedule": {
+        "name": "Zeitplan"
+      }
     }
   }
 }

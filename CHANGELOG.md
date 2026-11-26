@@ -1,5 +1,34 @@
 # Changelog
 
+## 0.7.0
+
+Stage 5 of the functional spec (drafts 0.25 to 0.28, sections 4.15 and 5.8): schedules; and the findings of the 0.6.0
+review.
+
+- Schedules: a schedule runs one scene at a time, or at sunrise or sunset with an offset of up to 180 minutes, on the
+  chosen weekdays. Resident scenes and labelled scenes of other integrations can be chosen. Missed runs are not made up
+  after a restart; a time in the skipped hour of summer time runs once at 3:00, one in the doubled hour once at its first
+  occurrence; the weekday of a sun schedule is that of the sun event; a day without the event is skipped. Schedules of
+  the same moment run in the order of the list. A run has no user; the logbook names the schedule as the trigger of the
+  scene, and a skipped run with its reason.
+- Every schedule is a `switch` entity with the next run as attribute; switching it with a user needs the rights of the
+  schedule, automations always switch. The entity id follows the name while the creating edit runs.
+- Rights: an account sees and changes only schedules whose scene it may run, and needs the edit right to change them.
+  The number of schedules is limited for the whole installation (option `schedules`, default 20, also in the template).
+- A schedule whose scene is deleted or loses its label stays, does not run, is marked in the card and named in a repair
+  issue while it is on; the question before deleting a scene names its schedules. A deleted room moves its schedules to
+  the house.
+- Card: view `schedules` with list, detail and editor (name, trigger, clock, offset, weekdays, scene choice), order by
+  dragging or the arrow keys of the handle, one column below 600 pixels.
+- "All off" in a room without a released device says so in the card instead of the mark, and the logbook names it; the
+  action returns the number of devices it took (AD6).
+- Undo of a house scene brings back a state that follows devices moved meanwhile (AE1). A house scene that follows a
+  moved device writes one logbook entry per scene (AE2).
+- Store format 4: an update adds an empty list of schedules and changes nothing else.
+- README: schedules with the rules of the clock and a push button example; SECURITY: the new commands and the switch.
+- Tests: `test_stage5.py` with a stepped clock (both days of summer time, sun offset over midnight, a day without
+  sunset, restart) and `card_probe_0_7_0.cjs`.
+
 ## 0.6.0
 
 Nachbesserung 4c of the functional spec (draft 0.24, sections 4.4, 4.5, 4.9, 4.10, 4.13, 4.14) and the findings of the

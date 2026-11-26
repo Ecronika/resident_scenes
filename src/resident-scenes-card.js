@@ -4,7 +4,7 @@ import { LitElement, html, css, nothing } from "lit";
 import { live } from "lit/directives/live.js";
 import { repeat } from "lit/directives/repeat.js";
 
-const VERSION = "0.6.0"; // must match the integration (checked by tests)
+const VERSION = "0.7.0"; // must match the integration (checked by tests)
 const WS = "resident_scenes";
 const HOUSE = "_house";
 const DOMAINS = ["light", "cover", "climate", "switch", "fan", "media_player", "scene"];
@@ -16,6 +16,8 @@ const POWER = html`<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="curre
   d="M16.56 5.44l-1.45 1.45A5.97 5.97 0 0 1 18 12a6 6 0 0 1-12 0c0-2.17 1.16-4.06 2.88-5.12L7.44 5.44A7.96 7.96 0 0 0 4 12a8 8 0 0 0 16 0c0-2.72-1.36-5.12-3.44-6.56M13 3h-2v10h2"/></svg>`;
 const VISIBLE_RELOAD = 5 * 60 * 1000; // wall panels turn the screen on often (review N2)
 const newId = () => Math.random().toString(36).slice(2, 10);
+const pad = (n) => String(n).padStart(2, "0");
+const WEEK = [0, 1, 2, 3, 4, 5, 6]; // Monday first, as the server counts
 const PLACEHOLDER = html`<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor"
   d="M19 19H5V5h14m0-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2m-5.04 9.29-2.75 3.54-1.96-2.36L6.5 17h11z"/></svg>`;
 
@@ -49,6 +51,15 @@ const I18N = {
     no_favorites: "No favorites: none are stored in the music system, or its favorites sensor is disabled.",
     light: "Lights", cover: "Shading", climate: "Climate", switch: "Switches", fan: "Fans",
     media_player: "Music", scene: "Scenes",
+    all_off_empty: "Nothing is released in this room.", scene_not_released: "Scene not released",
+    new_schedule: "New schedule", no_schedules: "No schedules yet.", schedule: "Schedule", schedule_named: "Schedule {name}",
+    trigger: "Trigger", sunrise: "Sunrise", sunset: "Sunset", time: "Time", hour: "Hour", minute: "Minute", offset: "Offset (min)",
+    ev_sunrise: "sunrise", ev_sunset: "sunset", before: "{n} min before {event}", after: "{n} min after {event}", at_event: "at {event}",
+    weekdays: "Weekdays", days: ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"],
+    days_long: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"], daily: "daily",
+    last_day: "The last chosen day cannot be taken away.", pick_scene: "Choose scene", other_scene: "Other",
+    next_run: "Next run", today: "today", tomorrow: "tomorrow", next_off: "Switched off: no run.", next_none: "No run in the coming days.",
+    confirm_delete_schedule: "Delete the schedule “{name}” for good?", schedule_gone: "This schedule was deleted or is no longer shown to you.",
     err: {
       unauthorized: "You may not change scenes.", no_access: "No access to this room.", name_exists: "This name is taken.",
       invalid_name: "Name is empty or too long.", limit_reached: "Limit of scenes reached.",
@@ -63,6 +74,8 @@ const I18N = {
       invalid_image_file: "This is not an image file.", image_too_large: "Image too large, limit:",
       image_limit: "Image limit reached:", nothing_to_undo: "Nothing to undo.",
       step_missing: "This step was removed meanwhile. The current state is shown.", default: "Saving failed.",
+      schedule_limit: "Limit of schedules reached.", scene_not_allowed: "This scene cannot be chosen.",
+      no_weekday: "The last chosen day cannot be taken away.",
     },
   },
   de: {
@@ -96,6 +109,15 @@ const I18N = {
     no_favorites: "Keine Favoriten: Im Musiksystem sind keine hinterlegt, oder sein Favoriten-Sensor ist abgeschaltet.",
     light: "Licht", cover: "Beschattung", climate: "Klima", switch: "Schalter", fan: "Lüfter",
     media_player: "Musik", scene: "Szenen",
+    all_off_empty: "In diesem Raum ist nichts freigegeben.", scene_not_released: "Szene nicht freigegeben",
+    new_schedule: "Neuer Zeitplan", no_schedules: "Noch keine Zeitpläne.", schedule: "Zeitplan", schedule_named: "Zeitplan {name}",
+    trigger: "Auslöser", sunrise: "Sonnenaufgang", sunset: "Sonnenuntergang", time: "Zeit", hour: "Stunde", minute: "Minute", offset: "Versatz (min)",
+    ev_sunrise: "Sonnenaufgang", ev_sunset: "Sonnenuntergang", before: "{n} min vor {event}", after: "{n} min nach {event}", at_event: "zum {event}",
+    weekdays: "Wochentage", days: ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"],
+    days_long: ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag"], daily: "täglich",
+    last_day: "Der letzte gewählte Tag lässt sich nicht abwählen.", pick_scene: "Szene wählen", other_scene: "Weitere",
+    next_run: "Nächster Lauf", today: "heute", tomorrow: "morgen", next_off: "Ausgeschaltet, kein Lauf.", next_none: "In den nächsten Tagen kein Lauf.",
+    confirm_delete_schedule: "Den Zeitplan „{name}“ endgültig löschen?", schedule_gone: "Dieser Zeitplan wurde gelöscht oder wird Ihnen nicht mehr gezeigt.",
     err: {
       unauthorized: "Sie dürfen Szenen nicht ändern.", no_access: "Kein Zugriff auf diesen Raum.", name_exists: "Dieser Name ist schon vergeben.",
       invalid_name: "Name fehlt oder ist zu lang.", limit_reached: "Höchstzahl an Szenen erreicht.",
@@ -110,6 +132,8 @@ const I18N = {
       image_limit: "Höchstzahl an Bildern erreicht:", nothing_to_undo: "Nichts zurückzunehmen.",
       step_missing: "Dieser Schritt wurde inzwischen entfernt. Der aktuelle Stand wird gezeigt.",
       default: "Speichern fehlgeschlagen.",
+      schedule_limit: "Höchstzahl an Zeitplänen erreicht.", scene_not_allowed: "Diese Szene lässt sich nicht wählen.",
+      no_weekday: "Der letzte gewählte Tag lässt sich nicht abwählen.",
     },
   },
 };
@@ -136,14 +160,18 @@ class ResidentScenesCard extends LitElement {
     _announce: { state: true },
     _ran: { state: true },
     _width: { state: true },
+    _sel: { state: true }, // the schedule shown in the detail (spec 5.8)
+    _sedit: { state: true }, // its open editor: { id, edit, created, switched, confirmDelete, lastDay }
+    _picker: { state: true }, // the scene choice: { create: true } or { id } of the schedule
+    _serror: { state: true },
   };
 
   setConfig(config) {
-    const views = ["manage", "list", "favorites", "rights"];
-    // the rights view needs no scope: it asks with the house scope only for the role (spec 5.1)
+    const views = ["manage", "list", "favorites", "rights", "schedules"];
+    // the rights and schedules views need no scope: one list for the house (spec 5.1, 5.8)
     const cfg = { scope: "area", view: "manage", columns: "auto", tile_size: 104, ...config,
-      ...(config?.view === "rights" ? { scope: "house" } : {}) };
-    if (!views.includes(cfg.view)) throw new Error("view must be manage, list, favorites or rights");
+      ...(["rights", "schedules"].includes(config?.view) ? { scope: "house" } : {}) };
+    if (!views.includes(cfg.view)) throw new Error("view must be manage, list, favorites, rights or schedules");
     if (!["area", "house"].includes(cfg.scope)) throw new Error("scope must be area or house");
     if (cfg.scope === "area" && !cfg.area) throw new Error("area is required for scope: area");
     if (cfg.columns !== "auto" && !(Number.isInteger(cfg.columns) && cfg.columns > 0)) throw new Error("columns must be auto or a whole number");
@@ -161,7 +189,7 @@ class ResidentScenesCard extends LitElement {
 
   // sections view: the full width of the section, so the two columns appear (V1, X2)
   getGridOptions() {
-    return { columns: this._config?.view === "manage" ? "full" : 12, min_columns: 6, rows: "auto" };
+    return { columns: ["manage", "schedules"].includes(this._config?.view) ? "full" : 12, min_columns: 6, rows: "auto" };
   }
 
   connectedCallback() {
@@ -200,6 +228,11 @@ class ResidentScenesCard extends LitElement {
     if (f && this._detail?.sequence?.[f.index]?.id === f.id) {
       this._focusStep = null;
       this.renderRoot.querySelector(`[data-action="drag"][data-id="${f.id}"]`)?.focus();
+    }
+    const fs = this._focusSched; // the same for a schedule moved with the arrow keys (spec 5.8)
+    if (fs && this._data?.schedules?.[fs.index]?.id === fs.id) {
+      this._focusSched = null;
+      this.renderRoot.querySelector(`.sched [data-action="drag"][data-id="${fs.id}"]`)?.focus();
     }
     // a question takes the focus on its safe answer, also when its content changes, and gives it back (V15, X5)
     const dialog = this.renderRoot.querySelector(".dialog");
@@ -308,7 +341,8 @@ class ResidentScenesCard extends LitElement {
   async _load(fromServer = false) {
     clearTimeout(this._retry);
     try {
-      this._data = await this.hass.callWS({ type: `${WS}/list`, scope: this._scope });
+      const schedules = this._config.view === "schedules";
+      this._data = await this.hass.callWS(schedules ? { type: `${WS}/schedules` } : { type: `${WS}/list`, scope: this._scope });
       this._loadedAt = Date.now();
       this._stale = false;
       this._backoff = 0;
@@ -340,6 +374,26 @@ class ResidentScenesCard extends LitElement {
     if (!this._data.manages_rights) this._rights = null;
     if (this._edit && !fromServer) this._loadDevices(); // fresh signed URLs of the image library
     if (this._selected) await this._loadDetail();
+    if (this._config.view === "schedules") this._syncSchedules();
+  }
+
+  // after a reload of the schedules: another account's change applies, the field in use keeps its input (spec 5.8)
+  _syncSchedules() {
+    const d = this._data;
+    const focused = this.renderRoot.activeElement?.dataset?.key;
+    for (const key of this._drafts.keys()) if (key !== focused) this._drafts.delete(key);
+    if (this._sel && !d.schedules.some((s) => s.id === this._sel)) {
+      // deleted by another account, or its scene is no longer one this account may run
+      if (this._sel !== this._deleting) this._notice = "schedule_gone";
+      this._sel = null;
+      this._sedit = null;
+      this._picker = null;
+    }
+    if (this._sedit && !d.can_edit) {
+      this._sedit = null;
+      this._picker = null;
+      this._notice = "rights_gone";
+    }
   }
 
   async _loadDetail() {
@@ -413,9 +467,11 @@ class ResidentScenesCard extends LitElement {
   async _allOff() {
     const key = `all_off:${this._config.area}`;
     try {
-      await this.hass.callService(WS, "all_off", { area_id: this._config.area });
-      if (this._notice === "all_off_failed") this._notice = null;
-      this._ranFeedback(key, this._t("all_off_tile"));
+      const res = await this.hass.callService(WS, "all_off", { area_id: this._config.area }, undefined, undefined, true);
+      if (["all_off_failed", "all_off_empty"].includes(this._notice)) this._notice = null;
+      // nothing released in the room: the card says so instead of the mark (spec 4.13, review AD6)
+      if (res?.response?.devices === 0) this._notice = "all_off_empty";
+      else this._ranFeedback(key, this._t("all_off_tile"));
     } catch (err) {
       this._notice = "all_off_failed";
     }
@@ -444,6 +500,8 @@ class ResidentScenesCard extends LitElement {
       // only for main users and the installer; for anyone else the card shows nothing (spec 5.1)
       if (!this._data?.manages_rights || !this._rights) return nothing;
       body = this._renderRights();
+    } else if (this._config.view === "schedules") {
+      body = this._data ? this._renderSchedules() : nothing;
     } else if (this._data?.access === false) {
       // the favorites view stays invisible without the right, like one without a slot in use (spec 4.7, 5.5)
       if (this._config.view === "favorites" && !outdated) return nothing;
@@ -460,7 +518,7 @@ class ResidentScenesCard extends LitElement {
             <button data-action="reload" @click=${() => location.reload()}>${this._t("reload_btn")}</button></div>`
         : nothing}
       ${this._stale ? html`<p class="muted" role="status">${this._t("stale")}</p>` : nothing}
-      ${this._notice ? html`<p class="error" role="alert">${this._t(this._notice)}</p>` : nothing} ${body}
+      ${this._notice ? html`<p class=${this._notice === "all_off_empty" ? "muted" : "error"} role="alert">${this._t(this._notice)}</p>` : nothing} ${body}
       <p class="sr" role="status">${this._ran ?? nothing}</p>
     </div>`;
   }
@@ -1052,13 +1110,14 @@ class ResidentScenesCard extends LitElement {
   }
 
   // drag the handle of a row onto another row (spec 5.7); pointer events cover mouse, touch and pen
-  _drag(ev, from) {
+  _drag(ev, from, selector = ".row.order", drop = null) {
     ev.preventDefault();
     const handle = ev.currentTarget;
     handle.setPointerCapture?.(ev.pointerId);
-    const id = this._detail.sequence[from].id;
+    const id = this._detail?.sequence[from].id;
+    const moveTo = drop ?? ((to) => this._send("move_step", { step_id: id, index: to }));
     const move = (e) => {
-      const rows = [...this.renderRoot.querySelectorAll(".row.order")];
+      const rows = [...this.renderRoot.querySelectorAll(selector)];
       const to = rows.findIndex((r) => {
         const b = r.getBoundingClientRect();
         return e.clientY >= b.top && e.clientY < b.bottom;
@@ -1077,7 +1136,7 @@ class ResidentScenesCard extends LitElement {
       const to = this._dragTo;
       this._dragTo = null;
       this.requestUpdate();
-      if (to != null && to !== from) this._send("move_step", { step_id: id, index: to });
+      if (to != null && to !== from) moveTo(to);
     };
     handle.addEventListener("pointermove", move);
     handle.addEventListener("pointerup", end);
@@ -1412,6 +1471,324 @@ class ResidentScenesCard extends LitElement {
     }
   }
 
+  // ---------- schedules (spec 4.15, 5.8) ----------
+
+  _renderSchedules() {
+    const s = this._sel && this._data.schedules.find((x) => x.id === this._sel);
+    const list = this._renderScheduleList();
+    const detail = s ? this._renderScheduleDetail(s) : nothing;
+    // a question lies over the whole card (spec 5.7)
+    const question = this._picker ? this._renderPicker() : s && this._sedit?.confirmDelete ? this._renderScheduleDelete(s) : nothing;
+    const body = this._narrow ? (s ? detail : list)
+      : html`<div class="columns"><div class="col-list">${list}</div><div class="col-detail">${detail}</div></div>`;
+    return html`<div ?inert=${question !== nothing}>${body}</div>${question}`;
+  }
+
+  _issue(s) {
+    return s.issue ? html`<span class="badge warn">${this._t(s.issue === "not_released" ? "scene_not_released" : s.issue)}</span>` : nothing;
+  }
+
+  // "23:00 · Mo Di Mi Do So", "Sonnenuntergang − 20 min · täglich" (spec 5.8)
+  _when(s) {
+    const offset = s.offset ? ` ${s.offset < 0 ? "−" : "+"} ${Math.abs(s.offset)} min` : "";
+    return `${s.trigger === "time" ? s.time : this._t(s.trigger) + offset} · ${this._days(s.weekdays)}`;
+  }
+
+  _days(days) {
+    return days.length === 7 ? this._t("daily") : days.map((d) => this._t(`days.${d}`)).join(" ");
+  }
+
+  // "20 min vor Sonnenuntergang", "zum Sonnenuntergang", "15 min nach Sonnenaufgang" (spec 5.8)
+  _offsetWords(trigger, offset) {
+    const text = this._t(offset < 0 ? "before" : offset > 0 ? "after" : "at_event");
+    return text.replace("{n}", Math.abs(offset)).replace("{event}", this._t(`ev_${trigger}`));
+  }
+
+  _sceneLabel(s) {
+    return `${this._areaName(s.area_id)} – ${s.scene_name}`;
+  }
+
+  // "Nächster Lauf: heute 15:48", in the time zone of Home Assistant; when off or without its scene, the reason
+  _nextRun(s) {
+    if (!s.active) return this._t("next_off");
+    if (s.issue) return this._t(s.issue === "not_released" ? "scene_not_released" : s.issue);
+    if (!s.next_run) return this._t("next_none");
+    const timeZone = this.hass.config?.time_zone;
+    const at = new Date(s.next_run);
+    const day = (d) => new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).format(d);
+    const fmt = (opts) => new Intl.DateTimeFormat(this._lang, { timeZone, ...opts }).format(at);
+    const when = day(at) === day(new Date()) ? this._t("today")
+      : day(at) === day(new Date(Date.now() + 86400000)) ? this._t("tomorrow")
+      : fmt({ weekday: "short", day: "numeric", month: "numeric" });
+    return `${this._t("next_run")}: ${when} ${fmt({ hour: "2-digit", minute: "2-digit", hourCycle: "h23" })}`;
+  }
+
+  // the switch acts at once, in the list and in the detail, without "Ändern"; it names its schedule (spec 5.8)
+  _toggle(s) {
+    return html`<button class="switch" role="switch" aria-checked=${s.active ? "true" : "false"} data-field="active" data-id=${s.id}
+      aria-label=${this._t("schedule_named").replace("{name}", s.name)} ?disabled=${!this._data.can_edit}
+      @click=${() => this._setActive(s, !s.active)}><span class="track"></span></button>`;
+  }
+
+  _renderScheduleList() {
+    const d = this._data;
+    const handle = (s, i) => html`<span class="handle" role="button" tabindex="0" data-action="drag" data-id=${s.id}
+      aria-label=${this._t("drag")} title=${this._t("drag")}
+      @pointerdown=${(ev) => this._drag(ev, i, ".row.sched", (to) => this._moveSchedule(s.id, to))}
+      @keydown=${(ev) => this._scheduleKey(ev, s, i)}>≡</span>`;
+    return html`${d.can_edit
+        ? html`<button class="primary wide" data-action="new-schedule" ?disabled=${d.full} @click=${() => (this._picker = { create: true })}>
+              + ${this._t("new_schedule")}</button>
+            ${d.full ? html`<p class="muted">${this._t("err.schedule_limit")} (${d.limit})</p>` : nothing}`
+        : nothing}
+      ${d.schedules.length
+        ? d.schedules.map((s, i) => html`<div class="row sched ${this._sel === s.id ? "selected" : ""} ${this._dragTo === i ? "drop" : ""}">
+            ${d.can_edit ? handle(s, i) : nothing}${this._toggle(s)}
+            <button class="name link" data-action="select-schedule" data-id=${s.id} @click=${() => this._selectSchedule(s.id)}>
+              <span class="line">${s.name}</span><span class="line muted">${this._when(s)}</span></button>${this._issue(s)}
+          </div>`)
+        : html`<p class="muted">${this._t("no_schedules")}</p>`}
+      <p class="sr" role="status">${this._announce ?? nothing}</p>`;
+  }
+
+  _selectSchedule(id) {
+    this._sel = id;
+    this._sedit = null;
+    this._serror = null;
+  }
+
+  _renderScheduleDetail(s) {
+    if (this._sedit?.id === s.id) return this._renderScheduleEditor(s);
+    const back = html`<button data-action="back" @click=${() => (this._sel = null)}>‹ ${this._t("back")}</button>`;
+    return html`${this._narrow ? back : nothing}
+      <div class="bar"><h2 class="name">${s.name}</h2>${this._toggle(s)}</div>
+      ${this._data.can_edit
+        ? html`<button data-action="edit-schedule" @click=${() => (this._sedit = { id: s.id, edit: newId() })}>${this._t("edit")}</button>`
+        : nothing}
+      ${this._serror ? html`<p class="error" role="alert">${this._serror}</p>` : nothing}
+      <div class="row"><span class="name">${s.trigger === "time" ? `${this._t("time")} ${s.time}` : this._offsetWords(s.trigger, s.offset)}</span></div>
+      <div class="row"><span class="name">${this._days(s.weekdays)}</span></div>
+      <div class="row"><span class="name">${this._sceneLabel(s)}</span>${this._issue(s)}</div>
+      <p class="muted" data-field="next-run">${this._nextRun(s)}</p>`;
+  }
+
+  // taps faster than the answer count on from the value sent last, as for a delay (W7)
+  _sent(id, field, stored) {
+    const sent = this._schedSent?.[`${id}:${field}`];
+    return sent && Date.now() - sent.at < 2000 ? sent.value : stored;
+  }
+
+  _setSent(id, field, value) {
+    (this._schedSent ??= {})[`${id}:${field}`] = { value, at: Date.now() };
+  }
+
+  _renderScheduleEditor(s) {
+    const e = this._sedit;
+    const triggers = ["sunrise", "sunset", "time"].map((t) => [t, this._t(t)]);
+    const days = this._sent(s.id, "weekdays", s.weekdays);
+    return html`${this._offline ? html`<p class="error" role="alert">${this._t("offline")}</p>` : nothing}
+      <div class="editor" ?inert=${this._offline}>
+        <div class="bar">
+          <button class="icon" data-action="schedule-back" aria-label=${this._t("back")} @click=${() => (this._sedit = null)}>‹</button>
+          <span class="name">${s.name}</span>${this._toggle(s)}
+          <button class="primary" data-action="schedule-done" @click=${() => this._scheduleDone(s)}>${this._t("done")}</button>
+        </div>
+        ${this._serror ? html`<p class="error" role="alert">${this._serror}</p>` : nothing}
+        <label class="field">${this._t("name")}
+          <input data-field="schedule-name" data-key="schedule-name" maxlength=${this._data.name_length}
+            .value=${live(this._draft("schedule-name", s.name))} @input=${this._keep("schedule-name")}
+            @keydown=${(ev) => ev.key === "Enter" && ev.target.blur()}
+            @change=${(ev) => ev.target.value.trim() !== s.name && this._scheduleInput(s, { name: ev.target.value.trim() })} /></label>
+        <h3>${this._t("trigger")}</h3>
+        ${this._seg("trigger", s.id, triggers, s.trigger, (t) => this._scheduleInput(s, { trigger: t }))}
+        ${s.trigger === "time" ? this._renderClock(s) : this._renderOffset(s)}
+        <h3>${this._t("weekdays")}</h3>
+        <div class="days" role="group" aria-label=${this._t("weekdays")}>
+          ${WEEK.map((d) => html`<button data-field="weekday" data-day=${d} aria-pressed=${days.includes(d) ? "true" : "false"}
+            aria-label=${this._t(`days_long.${d}`)} @click=${() => this._toggleDay(s, d)}>${this._t(`days.${d}`)}</button>`)}
+        </div>
+        ${e.lastDay ? html`<p class="muted" role="status">${this._t("last_day")}</p>` : nothing}
+        <h3>${this._t("scene")}</h3>
+        <button class="wide" data-action="change-scene" @click=${() => (this._picker = { id: s.id })}>${this._sceneLabel(s)} ›</button>
+        ${this._issue(s)}
+        <div class="actions">
+          <button class="danger" data-action="ask-delete-schedule" @click=${() => (this._sedit = { ...e, confirmDelete: true })}>${this._t("delete")}</button>
+        </div>
+      </div>`;
+  }
+
+  // hour and minute in 24 hours, large, each with minus, plus and direct input (spec 5.8)
+  _renderClock(s) {
+    const [h, m] = this._sent(s.id, "time", s.time).split(":").map(Number);
+    const send = (hh, mm) => {
+      const time = `${pad((hh + 24) % 24)}:${pad((mm + 60) % 60)}`;
+      this._setSent(s.id, "time", time);
+      this._scheduleInput(s, { time });
+    };
+    const part = (field, value, max) => {
+      const key = `schedule-${field}`;
+      const set = (v) => (field === "hour" ? send(v, m) : send(h, v));
+      const typed = (ev) => {
+        const v = /^\s*\d{1,2}\s*$/.test(ev.target.value) ? Number(ev.target.value) : NaN;
+        if (v >= 0 && v <= max) return set(v);
+        this._drafts.delete(key); // a refused input shows the stored value again and says why (spec 5.8)
+        this._serror = this._err("invalid_value", `0–${max}`);
+      };
+      return html`<div class="clock-part">
+        <button class="icon" data-action=${`${field}-minus`} aria-label=${`${this._t(field)} −1`} @click=${() => set(value - 1)}>−</button>
+        <input class="big" inputmode="numeric" maxlength="2" data-field=${field} data-key=${key} aria-label=${this._t(field)}
+          .value=${live(this._draft(key, pad(value)))} @input=${this._keep(key)} @change=${typed} />
+        <button class="icon" data-action=${`${field}-plus`} aria-label=${`${this._t(field)} +1`} @click=${() => set(value + 1)}>+</button>
+      </div>`;
+    };
+    return html`<div class="clock">${part("hour", h, 23)}<span class="big" aria-hidden="true">:</span>${part("minute", m, 59)}</div>`;
+  }
+
+  // five minutes per tap, whole minutes typed, locked at the limits, named in words (spec 5.8)
+  _renderOffset(s) {
+    const max = this._data.max_offset ?? 180;
+    const key = "schedule-offset";
+    const offset = this._sent(s.id, "offset", s.offset);
+    const set = (v) => {
+      this._setSent(s.id, "offset", v);
+      this._scheduleInput(s, { offset: v });
+    };
+    const typed = (ev) => {
+      const v = /^\s*[-−+]?\d+\s*$/.test(ev.target.value) ? Number(ev.target.value.trim().replace("−", "-")) : NaN;
+      if (v >= -max && v <= max) return set(v);
+      this._drafts.delete(key);
+      this._serror = this._err("invalid_value", `−${max}–${max} min`);
+    };
+    return html`<div class="delay">
+        <button class="icon" data-action="offset-minus" aria-label="−5 min" ?disabled=${offset <= -max}
+          @click=${() => set(Math.max(-max, offset - 5))}>−</button>
+        <label class="plain"><input class="secs" inputmode="numeric" maxlength="4" data-field="offset" data-key=${key}
+          aria-label=${this._t("offset")} .value=${live(String(this._draft(key, offset)))} @input=${this._keep(key)} @change=${typed} /> min</label>
+        <button class="icon" data-action="offset-plus" aria-label="+5 min" ?disabled=${offset >= max}
+          @click=${() => set(Math.min(max, offset + 5))}>+</button>
+      </div>
+      <p class="muted" data-field="offset-words">${this._offsetWords(s.trigger, offset)}</p>`;
+  }
+
+  // the last chosen day stays, the card says so (spec 5.8)
+  _toggleDay(s, day) {
+    const days = this._sent(s.id, "weekdays", s.weekdays);
+    if (days.includes(day) && days.length === 1) return (this._sedit = { ...this._sedit, lastDay: true });
+    const next = days.includes(day) ? days.filter((d) => d !== day) : [...days, day].sort();
+    this._sedit = { ...this._sedit, lastDay: false };
+    this._setSent(s.id, "weekdays", next);
+    this._scheduleInput(s, { weekdays: next });
+  }
+
+  _setActive(s, on) {
+    // a switch used in the edit that created the schedule keeps its state after "Fertig" (spec 4.15)
+    if (this._sedit?.id === s.id) this._sedit = { ...this._sedit, switched: true };
+    return this._scheduleInput(s, { active: on });
+  }
+
+  // one input = one field, stored at once; a refusal names the reason and shows the stored value (spec 5.8)
+  async _scheduleInput(s, fields) {
+    this._serror = null;
+    const edit = this._sedit?.id === s.id ? this._sedit.edit : newId();
+    try {
+      await this.hass.callWS({ type: `${WS}/schedule_update`, schedule_id: s.id, edit, ...fields });
+    } catch (err) {
+      this._schedSent = {};
+      this._drafts.clear();
+      // not_found: deleted, or no longer shown to this account; the reload closes the detail with a hint
+      if (err.code !== "not_found") this._serror = this._err(err.code, /^\w+: (.+)$/.exec(err.message ?? "")?.[1] ?? "");
+    }
+    await this._load();
+  }
+
+  // "Fertig" in the edit that created the schedule switches it on, unless its switch was used (spec 4.15)
+  async _scheduleDone(s) {
+    const e = this._sedit;
+    this._sedit = null;
+    if (e?.created && !e.switched && !s.active) await this._scheduleInput(s, { active: true });
+  }
+
+  async _moveSchedule(id, index) {
+    try {
+      await this.hass.callWS({ type: `${WS}/schedule_move`, schedule_id: id, index });
+    } catch (err) {
+      this._serror = this._err(err.code);
+    }
+    await this._load();
+  }
+
+  async _scheduleKey(ev, s, i) {
+    const to = ev.key === "ArrowUp" ? i - 1 : ev.key === "ArrowDown" ? i + 1 : -1;
+    const count = this._data.schedules.length;
+    if (to < 0 || to >= count) return;
+    ev.preventDefault();
+    this._focusSched = { id: s.id, index: to };
+    await this._moveSchedule(s.id, to);
+    this._announce = this._t("moved").replace("{n}", to + 1).replace("{m}", count);
+  }
+
+  // all scenes the account may choose, by house and rooms, with the mark of their kind; a tap chooses (spec 5.8)
+  _renderPicker() {
+    const groups = new Map();
+    for (const c of this._data.scenes) {
+      const area = c.area_id ?? null;
+      if (!groups.has(area)) groups.set(area, []);
+      groups.get(area).push(c);
+    }
+    const order = [...groups.keys()].sort((a, b) => (a === null ? -1 : b === null ? 1 : this._areaName(a).localeCompare(this._areaName(b))));
+    const mark = { installer: this._t("installer"), knx: "KNX", other: this._t("other_scene") };
+    return html`<div class="overlay" @keydown=${this._dialogKey}><div class="dialog picker" role="dialog" aria-modal="true" aria-label=${this._t("pick_scene")}>
+      <h3>${this._t("pick_scene")}</h3>
+      ${order.length
+        ? order.map((area) => html`<h3>${this._areaName(area)}</h3>
+            ${groups.get(area).sort((x, y) => x.name.localeCompare(y.name)).map((c) => html`<button class="wide" data-action="choose-scene"
+              data-id=${c.scene_id ?? c.entity_id} @click=${() => this._chooseScene(c)}>${c.name}
+              ${mark[c.kind] ? html`<span class="badge">${mark[c.kind]}</span>` : nothing}</button>`)}`)
+        : html`<p class="muted">${this._t("empty")}</p>`}
+      <button class="wide" data-action="picker-cancel" data-safe @click=${() => (this._picker = null)}>${this._t("cancel")}</button>
+    </div></div>`;
+  }
+
+  // creating: the schedule exists only once a scene is chosen; cancelling creates none (spec 4.15)
+  async _chooseScene(c) {
+    const picker = this._picker;
+    const ref = c.scene_id ? { scene_id: c.scene_id } : { entity_id: c.entity_id };
+    this._picker = null;
+    if (!picker.create) return this._scheduleInput({ id: picker.id }, ref);
+    const edit = newId();
+    try {
+      const res = await this.hass.callWS({ type: `${WS}/schedule_create`, ...ref, name: this._t("new_schedule"), edit });
+      this._sel = res.schedule_id;
+      this._sedit = { id: res.schedule_id, edit, created: true };
+      this._serror = null;
+    } catch (err) {
+      this._notice = this._err(err.code, /^\w+: (.+)$/.exec(err.message ?? "")?.[1] ?? "");
+    }
+    await this._load();
+  }
+
+  _renderScheduleDelete(s) {
+    const question = this._t("confirm_delete_schedule").replace("{name}", s.name);
+    return html`<div class="overlay" @keydown=${this._dialogKey}><div class="dialog" role="alertdialog" aria-modal="true" aria-label=${question}>${question}
+      <div class="actions">
+        <button class="danger" data-action="delete-schedule" @click=${() => this._deleteSchedule(s)}>${this._t("yes")}</button>
+        <button data-action="keep-schedule" data-safe @click=${() => (this._sedit = { ...this._sedit, confirmDelete: false })}>${this._t("no")}</button>
+      </div></div></div>`;
+  }
+
+  async _deleteSchedule(s) {
+    this._deleting = s.id; // its own deletion closes the detail without a hint
+    try {
+      await this.hass.callWS({ type: `${WS}/schedule_delete`, schedule_id: s.id });
+      this._sel = null;
+      this._sedit = null;
+    } catch (err) {
+      this._sedit = { ...this._sedit, confirmDelete: false };
+      this._serror = this._err(err.code);
+    }
+    await this._load();
+  }
+
   // ---------- delete (V13: a dialog over the card) ----------
 
   _renderConfirmDelete() {
@@ -1420,7 +1797,7 @@ class ResidentScenesCard extends LitElement {
       const [scope, n] = s.split(":");
       return `${this._areaName(scope === HOUSE ? null : scope)} ${this._t("slot")} ${n}`;
     });
-    const all = [...used.scenes, ...slots];
+    const all = [...used.scenes, ...slots, ...(used.schedules ?? []).map((n) => `${this._t("schedule")} ${n}`)];
     const question = this._t("confirm_delete").replace("{name}", this._detail.name);
     return html`<div class="overlay" @keydown=${this._dialogKey}><div class="dialog" role="alertdialog" aria-modal="true" aria-label=${question}>${question}
       ${all.length ? html`<br />${this._t("used_on")} ${all.join(", ")}` : nothing}
@@ -1530,6 +1907,13 @@ class ResidentScenesCard extends LitElement {
     .handle { cursor: grab; touch-action: none; user-select: none; min-width: 44px; min-height: 44px; display: flex;
       align-items: center; justify-content: center; font-size: 1.4em; color: var(--secondary-text-color); border-radius: 8px; }
     .row.drop { outline: 2px dashed var(--primary-color); }
+    .sched .switch, .bar .switch { flex: none; } .sched .name .line { display: block; overflow: hidden; text-overflow: ellipsis; }
+    .clock { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 4px 8px; margin: 8px 0; }
+    .clock-part { display: flex; align-items: center; gap: 2px; }
+    .clock .big { font-size: 1.8em; width: 2.2em; text-align: center; padding: 0; }
+    .days { display: flex; flex-wrap: wrap; gap: 4px; } .days button { padding: 0 6px; }
+    .days button[aria-pressed=true] { background: var(--primary-color); color: var(--text-primary-color, #fff); border-color: var(--primary-color); }
+    .dialog.picker { max-height: 80vh; overflow: auto; } .dialog.picker .wide { text-align: left; }
     .tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 12px; }
     .tile { position: relative; aspect-ratio: 1; padding: 0; overflow: hidden; display: flex; align-items: flex-end; justify-content: center; }
     /* favorites: tiles of a fixed edge, left-aligned; the free space lies between the side column and the favorites */

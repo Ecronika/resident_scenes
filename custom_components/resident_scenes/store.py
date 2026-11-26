@@ -1,4 +1,4 @@
-"""Persistent scenes, favorite slots, uploaded images and the image library."""
+"""Persistent scenes, favorite slots, schedules, uploaded images and the image library."""
 
 from __future__ import annotations
 
@@ -33,6 +33,7 @@ from .const import (
     CONF_NAME_LENGTH,
     CONF_ROOMS,
     CONF_SCENES_PER_AREA,
+    CONF_SCHEDULES,
     CONF_STEPS_PER_SCENE,
     DOMAIN,
     EVENT_CHANGED,
@@ -41,6 +42,7 @@ from .const import (
     IMAGE_URL,
     KIND_INSTALLER,
     KIND_RESIDENT,
+    MAX_OFFSET,
     MAX_TRANSITION,
     PHOTO_URL,
     SIGNAL_CHANGED,
@@ -62,6 +64,7 @@ from .model import (
     slot_count,
     step_issue,
 )
+from .schedules import target
 
 SIGN_EXPIRY = timedelta(days=1)
 UPLOAD_GRACE = 3600  # an upload not yet saved in a scene is kept this long (seconds)
@@ -135,7 +138,11 @@ class _VersionedStore(Store[dict[str, Any]]):
     async def _async_migrate_func(
         self, old_major_version: int, old_minor_version: int, old_data: dict[str, Any]
     ) -> dict[str, Any]:
-        """Version 1 to 2: protection, transition, previous state. 2 to 3: steps become a sequence."""
+        """Version 1 to 2: protection, transition, previous state. 2 to 3: steps become a sequence.
+
+        3 to 4: an empty list of schedules; scenes, images and slots stay as they are (spec 4.11).
+        """
+        old_data.setdefault("schedules", [])
         scenes = old_data.get("scenes", {})
         for scene in scenes.values():
             scene.setdefault("content_released", False)
@@ -159,9 +166,11 @@ class SceneStore:
         self._store = _VersionedStore(hass, STORAGE_VERSION, STORAGE_KEY)
         self.scenes: dict[str, dict[str, Any]] = {}
         self.favorites: dict[str, list[str | None]] = {}
+        self.schedules: list[dict[str, Any]] = []  # in the order of the list (spec 4.15)
         self.images: list[str] = []
         self._signed: dict[str, tuple[str, float]] = {}
         self.runner: Any = None  # SceneRunner, set up after loading
+        self.scheduler: Any = None  # Scheduler, set up after loading
         self._upload_lock = asyncio.Lock()  # one image decoded at a time, about 130 MB each (review T5)
         self._save_since: float | None = None  # first input not yet on disk (review W6)
 
@@ -170,6 +179,7 @@ class SceneStore:
         data = await self._store.async_load() or {}
         self.scenes = data.get("scenes", {})
         self.favorites = data.get("favorites", {})
+        self.schedules = data.get("schedules", [])
         await self.async_scan_images()
         # areas deleted while Home Assistant was stopped
         areas = ar.async_get(self.hass)
@@ -199,7 +209,7 @@ class SceneStore:
         )
 
     async def _device_updated(self, event: Event[dr.EventDeviceRegistryUpdatedData]) -> None:
-        if "area_id" in event.data.get("changes", {}) and self._follow_moves():
+        if "area_id" in event.data.get("changes", {}) and (self._follow_moves() | self._sync_schedules()):
             await self._async_commit()
 
     async def _area_updated(self, event: Event[ar.EventAreaRegistryUpdatedData]) -> None:
@@ -226,7 +236,7 @@ class SceneStore:
         data = event.data
         if data["action"] != "update":
             return
-        changed = "area_id" in data.get("changes", {}) and self._follow_moves()
+        changed = "area_id" in data.get("changes", {}) and (self._follow_moves() | self._sync_schedules())
         if not (old := data.get("old_entity_id")):
             if changed:
                 await self._async_commit()
@@ -262,6 +272,10 @@ class SceneStore:
             self.hass.bus.async_fire(
                 EVENT_CHANGED, {"scene_id": scene["id"], "name": scene["name"], "action": "moved to house"}
             )
+        for schedule in self.schedules:  # also one whose scene is missing goes to the house (spec 4.15)
+            if schedule["area_id"] == area_id:
+                schedule["area_id"] = None
+                loose = True
         return bool(moved) or loose
 
     def _follow_moves(self) -> bool:
@@ -307,6 +321,26 @@ class SceneStore:
                     del sequence[index]
             if moved:
                 scene["version"] += 1  # open editors hold the old steps
+                changed = True
+                # not an edit; named once per scene (spec 4.5, review AE2)
+                self.hass.bus.async_fire(
+                    EVENT_CHANGED,
+                    {
+                        "scene_id": scene["id"],
+                        "name": scene["name"],
+                        "action": "follows moved devices",
+                        "entity_id": ent_reg.async_get_entity_id("scene", DOMAIN, scene["id"]),
+                    },
+                )
+        return changed
+
+    def _sync_schedules(self) -> bool:
+        """A schedule keeps room and name of its scene, also once the scene is gone (spec 4.15)."""
+        changed = False
+        for schedule in self.schedules:
+            scene = target(self.hass, self, schedule)
+            if (scene["area_id"], scene["name"]) != (schedule["area_id"], schedule["scene_name"]):
+                schedule["area_id"], schedule["scene_name"] = scene["area_id"], scene["name"]
                 changed = True
         return changed
 
@@ -422,7 +456,7 @@ class SceneStore:
         return is_admin or scene["kind"] != KIND_INSTALLER or scene["content_released"]
 
     def used_in(self, scene_id: str) -> dict[str, list[str]]:
-        """Return the house scenes calling a scene and the favorite slots it is on."""
+        """Return the house scenes calling a scene, the favorite slots it is on and its schedules (spec 4.5)."""
         callers = [
             s["name"]
             for s in self.scenes.values()
@@ -431,7 +465,8 @@ class SceneStore:
         slots = [
             f"{scope}:{i + 1}" for scope, ids in self.favorites.items() for i, s in enumerate(ids) if s == scene_id
         ]
-        return {"scenes": callers, "slots": slots}
+        schedules = [s["name"] for s in self.schedules if s["scene_id"] == scene_id]
+        return {"scenes": callers, "slots": slots, "schedules": schedules}
 
     def _check_name(self, name: str, area_id: str | None, own_id: str | None) -> str:
         """Return the stripped name; empty, too long or taken in the area is refused."""
@@ -534,7 +569,7 @@ class SceneStore:
         ):
             work["entity_named"] = True
         if command == "update" and work["name"] != scene["name"]:
-            self._rename_entity(work)
+            self._rename_entity(work, "scene")
         if command == "update" and "image" in msg:
             await self._async_commit()  # also cleans the uploads
         else:
@@ -577,6 +612,7 @@ class SceneStore:
         return began
 
     def _changed(self) -> None:
+        self._sync_schedules()
         self.async_save_later()
         async_dispatcher_send(self.hass, SIGNAL_CHANGED)
 
@@ -617,18 +653,21 @@ class SceneStore:
             work["content_released"] = msg.get("content_released", work["content_released"])
         work["content_released"] = bool(work["content_released"]) and work["kind"] == KIND_INSTALLER
 
-    def _rename_entity(self, scene: dict[str, Any]) -> None:
-        """In the edit that created the scene the entity id follows the name, unless changed by hand (spec 4.3)."""
+    def _rename_entity(self, scene: dict[str, Any], domain: str) -> None:
+        """In the edit that created a scene or schedule its entity id follows the name, unless changed by hand.
+
+        Spec 4.3 and 4.15.
+        """
         if scene["entity_named"]:
             return
         registry = er.async_get(self.hass)
-        entity_id = registry.async_get_entity_id("scene", DOMAIN, scene["id"])
+        entity_id = registry.async_get_entity_id(domain, DOMAIN, scene["id"])
         if entity_id is None or entity_id != scene.get("auto_entity_id"):
             return
-        if entity_id != (new_id := f"scene.{slugify(scene['name'])}"):
+        if entity_id != (new_id := f"{domain}.{slugify(scene['name'])}"):
             # its own id is not taken: "Abend!" keeps scene.abend_2 (review Y6)
             new_id = registry.async_get_available_entity_id(
-                "scene", slugify(scene["name"]), current_entity_id=entity_id
+                domain, slugify(scene["name"]), current_entity_id=entity_id
             )
             if new_id != entity_id:
                 registry.async_update_entity(entity_id, new_entity_id=new_id)
@@ -787,6 +826,7 @@ class SceneStore:
             version=scene["version"] + 1, previous=None, changed_by=user_id, changed_at=dt_util.utcnow().isoformat(),
             edits=[],  # an editor still open begins a new edit with its next input (X9)
         )
+        self._follow_moves()  # the state taken back follows devices moved since (spec 4.5, review AE1)
         await self._async_commit()
         return scene
 
@@ -822,6 +862,7 @@ class SceneStore:
             raise ValidationError("not_found")
         if scene["kind"] == KIND_INSTALLER and not is_admin:
             raise ValidationError("protected")
+        self._sync_schedules()  # its schedules keep the room they have now (spec 4.15)
         del self.scenes[scene_id]
         self._clear_favorites(scene_id)
         if self.runner is not None:
@@ -884,6 +925,126 @@ class SceneStore:
             count += 1
         return count
 
+    # ---------- schedules (spec 4.15) ----------
+
+    def schedule(self, schedule_id: str) -> dict[str, Any]:
+        """Return a schedule; an unknown id is refused."""
+        if (found := next((s for s in self.schedules if s["id"] == schedule_id), None)) is None:
+            raise ValidationError("not_found")
+        return found
+
+    def scene_ref(self, scene_id: str | None, entity_id: str | None) -> dict[str, Any]:
+        """Return how a schedule refers to a scene, with the scene's room and name.
+
+        A scene of the integration by its fixed id, a released scene of another integration by its entry in
+        the registry, so renaming and a new entity id are followed (spec 4.15).
+        """
+        if scene_id:
+            if scene_id not in self.scenes:
+                raise ValidationError("scene_not_allowed")
+            ref: dict[str, Any] = {"scene_id": scene_id, "registry_id": None}
+        else:
+            ent = er.async_get(self.hass).async_get(entity_id or "")
+            if ent is None or ent.domain != "scene" or ent.entity_id not in allowed_entities(self.hass, self.entry):
+                raise ValidationError("scene_not_allowed")
+            ref = {"scene_id": None, "registry_id": ent.id}
+        scene = target(self.hass, self, {**ref, "area_id": None, "scene_name": ""})
+        return {**ref, "area_id": scene["area_id"], "scene_name": scene["name"]}
+
+    async def async_create_schedule(
+        self, ref: dict[str, Any], name: str, edit: str, user_id: str | None
+    ) -> dict[str, Any]:
+        """Create '<name> N': off, at the time of this moment, every day, at the end of the list (spec 4.15)."""
+        limit = int(opt(self.entry, CONF_SCHEDULES))
+        if len(self.schedules) >= limit:
+            raise ValidationError("schedule_limit", str(limit))
+        base, length = name.strip(), int(opt(self.entry, CONF_NAME_LENGTH))
+        if not base:
+            raise ValidationError("invalid_name")
+        taken = {s["name"].casefold() for s in self.schedules}
+        n = 1
+        while (candidate := f"{base[: length - len(str(n)) - 1]} {n}").casefold() in taken:
+            n += 1
+        now = dt_util.now()
+        schedule = {
+            "id": uuid4().hex,
+            "name": candidate,
+            "active": False,  # a half-set schedule runs nothing; "Done" in the card switches it on
+            "trigger": "time",
+            "time": f"{now.hour:02}:{now.minute:02}",
+            "offset": 0,
+            "weekdays": list(range(7)),
+            **ref,
+            "version": 1,
+            "changed_by": user_id,
+            "changed_at": now.isoformat(),
+            "entity_named": False,
+            "edits": [[edit, user_id, now.timestamp()]],
+            "creating_edit": [edit, user_id],
+        }
+        self.schedules.append(schedule)
+        await self._async_commit()
+        return schedule
+
+    async def async_update_schedule(
+        self, schedule_id: str, field: str, value: Any, edit: str, user_id: str | None
+    ) -> tuple[dict[str, Any], bool]:
+        """Change one field of a schedule at once; return it and whether the input began an edit.
+
+        Switching on and off is no edit, it goes to the logbook on its own (spec 4.15). Time and offset are
+        kept both, so a change of the trigger finds the other again.
+        """
+        schedule = self.schedule(schedule_id)
+        if field == "name":
+            value = value.strip()
+            if not value or len(value) > int(opt(self.entry, CONF_NAME_LENGTH)):
+                raise ValidationError("invalid_name")
+        elif field == "offset" and not -MAX_OFFSET <= value <= MAX_OFFSET:
+            raise ValidationError("invalid_value", "offset")
+        elif field == "weekdays" and not (value := sorted(set(value))):
+            raise ValidationError("no_weekday")  # the last day cannot be taken away
+        updates = value if field == "scene" else {field: value}
+        if all(schedule.get(k) == v for k, v in updates.items()):
+            return schedule, False  # changes nothing: no edit, no logbook entry
+        began = False
+        if field != "active":
+            now = dt_util.utcnow().timestamp()
+            alive = [e for e in schedule["edits"] if now - e[2] <= EDIT_IDLE]
+            others = [e for e in alive if e[:2] != [edit, user_id]]
+            began = len(others) == len(alive)
+            creating = schedule["creating_edit"]
+            # the entity id follows the name until the edit that created the schedule is over, as for scenes
+            ended = creating not in [e[:2] for e in others] or user_id == creating[1]
+            if began if [edit, user_id] == creating else ended:
+                schedule["entity_named"] = True
+            schedule["edits"] = [*others, [edit, user_id, now]][-EDITS_KEPT:]
+        schedule.update(updates)
+        schedule.update(version=schedule["version"] + 1, changed_by=user_id, changed_at=dt_util.utcnow().isoformat())
+        if field == "name":
+            self._rename_entity(schedule, "switch")
+        self._changed()
+        return schedule, began
+
+    async def async_delete_schedule(self, schedule_id: str) -> dict[str, Any]:
+        """Delete a schedule; its switch entity goes with it."""
+        schedule = self.schedule(schedule_id)
+        self.schedules.remove(schedule)
+        await self._async_commit()
+        return schedule
+
+    def move_schedule(self, schedule_id: str, index: int, visible: set[str]) -> None:
+        """Move a schedule among those an account sees; the others keep their places (spec 4.15)."""
+        places = [i for i, s in enumerate(self.schedules) if s["id"] in visible]
+        order = [self.schedules[i] for i in places]
+        moving = self.schedule(schedule_id)
+        if moving not in order:
+            raise ValidationError("not_found")
+        order.remove(moving)
+        order.insert(max(0, min(index, len(order))), moving)
+        for place, schedule in zip(places, order, strict=True):
+            self.schedules[place] = schedule
+        self._changed()
+
     async def async_set_favorite(self, scope: str, slot: int, scene_id: str | None) -> None:
         """Put a scene on a favorite slot (or empty it); a scene uses one slot per scope."""
         # only known scopes, otherwise any editor could grow the storage with made-up keys
@@ -908,7 +1069,7 @@ class SceneStore:
             self.favorites[scope] = [None if s == scene_id else s for s in slots]
 
     def _data(self) -> dict[str, Any]:
-        return {"scenes": self.scenes, "favorites": self.favorites}
+        return {"scenes": self.scenes, "favorites": self.favorites, "schedules": self.schedules}
 
     @callback
     def async_save_later(self) -> None:
@@ -930,6 +1091,7 @@ class SceneStore:
         await self._store.async_save(self._written())
 
     async def _async_commit(self) -> None:
+        self._sync_schedules()
         await self.async_write()
         await self._async_clean_uploads()
         async_dispatcher_send(self.hass, SIGNAL_CHANGED)

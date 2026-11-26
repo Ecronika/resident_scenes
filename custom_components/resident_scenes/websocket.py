@@ -22,6 +22,7 @@ from .const import (
     CONF_PANELS_WITH_EDIT,
     CONF_ROOMS,
     CONF_SCENES_PER_AREA,
+    CONF_SCHEDULES,
     CONF_USERS_WITHOUT_EDIT,
     CONF_USERS_WITHOUT_HOUSE,
     DOMAIN,
@@ -30,8 +31,10 @@ from .const import (
     HOUSE,
     KIND_INSTALLER,
     KIND_RESIDENT,
+    MAX_OFFSET,
     MAX_TRANSITION,
     SIGNAL_CHANGED,
+    TRIGGERS,
     VERSION,
 )
 from .model import (
@@ -50,6 +53,7 @@ from .model import (
     slot_count,
     step_issue,
 )
+from .schedules import fire_schedule_event, may_change_schedule, may_see_schedule, target
 from .store import SceneStore
 
 type Connection = websocket_api.ActiveConnection
@@ -100,7 +104,8 @@ def async_register(hass: HomeAssistant) -> None:
     """Register the commands."""
     for command in (
         ws_list, ws_scene, ws_devices, ws_create, ws_duplicate, ws_delete, ws_undo, ws_set_favorite, ws_subscribe,
-        ws_rights, ws_set_right, ws_set_rooms, *(_input_command(name, fields) for name, fields in INPUTS.items()),
+        ws_rights, ws_set_right, ws_set_rooms, ws_schedules, ws_schedule_create, ws_schedule_update,
+        ws_schedule_delete, ws_schedule_move, *(_input_command(name, fields) for name, fields in INPUTS.items()),
     ):
         websocket_api.async_register_command(hass, command)
 
@@ -572,4 +577,192 @@ async def ws_set_rooms(hass: HomeAssistant, connection: Connection, msg: dict[st
     hass.bus.async_fire(
         EVENT_RIGHTS, {"user": account["name"], "rooms": names, "house": msg["house"]}, context=connection.context(msg)
     )
+    connection.send_result(msg["id"])
+
+
+# ---------- schedules (spec 4.15) ----------
+
+SCHEDULE_FIELDS = ("name", "active", "trigger", "time", "offset", "weekdays", "scene_id", "entity_id")
+
+
+def _schedule_summary(hass: HomeAssistant, store: SceneStore, schedule: dict[str, Any]) -> dict[str, Any]:
+    keys = ("id", "name", "active", "trigger", "time", "offset", "weekdays", "scene_id", "version")
+    scene = target(hass, store, schedule)
+    moment = store.scheduler.next.get(schedule["id"])
+    return {
+        **{k: schedule[k] for k in keys},
+        "entity_id": er.async_get(hass).async_get_entity_id("switch", DOMAIN, schedule["id"]),
+        "scene_entity_id": scene["entity_id"],
+        "scene_name": scene["name"],
+        "area_id": scene["area_id"],
+        "issue": scene["issue"],
+        "next_run": moment.isoformat() if moment else None,  # none when off or the scene is missing
+    }
+
+
+def _scene_choices(hass: HomeAssistant, store: SceneStore, user) -> list[dict[str, Any]]:
+    """The scenes an account may choose for a schedule: those it may run (spec 4.15)."""
+    entry = store.entry
+    choices = [
+        {"scene_id": s["id"], "name": s["name"], "area_id": s["area_id"], "kind": s["kind"]}
+        for s in store.scenes.values()
+        if may_see(hass, entry, user, s["area_id"])
+    ]
+    for eid, ent in allowed_entities(hass, entry).items():
+        if ent.domain == "scene" and may_see(hass, entry, user, area := entity_area(hass, ent)):
+            kind = "knx" if ent.platform == "knx" else "other"
+            choices.append({"entity_id": eid, "name": _name(hass, eid), "area_id": area, "kind": kind})
+    return choices
+
+
+@websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/schedules"})
+@callback
+def ws_schedules(hass: HomeAssistant, connection: Connection, msg: dict[str, Any]) -> None:
+    """Return the schedules the account sees, in the order of the list, and the scenes it may choose."""
+    if (store := _store(hass, connection, msg["id"])) is None:
+        return
+    user, limit = connection.user, int(opt(store.entry, CONF_SCHEDULES))
+    editor = can_edit(store.entry, user)
+    connection.send_result(
+        msg["id"],
+        {
+            "version": VERSION,
+            "can_edit": editor,
+            "name_length": int(opt(store.entry, CONF_NAME_LENGTH)),
+            "max_offset": MAX_OFFSET,
+            "limit": limit,
+            "full": len(store.schedules) >= limit,
+            "schedules": [
+                _schedule_summary(hass, store, s) for s in store.schedules if may_see_schedule(hass, store, user, s)
+            ],
+            "scenes": _scene_choices(hass, store, user) if editor else [],
+        },
+    )
+
+
+def _schedule_editor(
+    hass: HomeAssistant, connection: Connection, msg: dict[str, Any]
+) -> tuple[SceneStore, dict[str, Any]] | None:
+    """Return store and schedule if the account may change it, otherwise send an error.
+
+    A schedule the account does not see is not named to it: not_found (spec 4.15).
+    """
+    if (store := _store(hass, connection, msg["id"])) is None:
+        return None
+    if not can_edit(store.entry, connection.user):
+        connection.send_error(msg["id"], websocket_api.ERR_UNAUTHORIZED, "No permission to change schedules")
+        return None
+    schedule = next((s for s in store.schedules if s["id"] == msg["schedule_id"]), None)
+    if schedule is None or not may_change_schedule(hass, store, connection.user, schedule):
+        connection.send_error(msg["id"], "not_found", "The schedule no longer exists")
+        return None
+    return store, schedule
+
+
+def _scene_ref(
+    hass: HomeAssistant, connection: Connection, msg: dict[str, Any], store: SceneStore
+) -> dict[str, Any] | None:
+    """Return the reference to the chosen scene if the account may run it, otherwise send an error."""
+    try:
+        ref = store.scene_ref(msg.get("scene_id"), msg.get("entity_id"))
+    except ValidationError as err:
+        connection.send_error(msg["id"], err.code, str(err))
+        return None
+    if not may_see(hass, store.entry, connection.user, ref["area_id"]):
+        connection.send_error(msg["id"], "no_access", "No access to this scene")
+        return None
+    return ref
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): f"{DOMAIN}/schedule_create",
+        vol.Exclusive("scene_id", "scene"): str,
+        vol.Exclusive("entity_id", "scene"): str,
+        vol.Required("name"): str,
+        vol.Required("edit"): str,
+    }
+)
+@websocket_api.async_response
+async def ws_schedule_create(hass: HomeAssistant, connection: Connection, msg: dict[str, Any]) -> None:
+    """Create a schedule for a scene; the card asks for the scene first and sends the translated name."""
+    if (store := _store(hass, connection, msg["id"])) is None:
+        return
+    if not can_edit(store.entry, connection.user):
+        connection.send_error(msg["id"], websocket_api.ERR_UNAUTHORIZED, "No permission to change schedules")
+        return
+    if (ref := _scene_ref(hass, connection, msg, store)) is None:
+        return
+    job = store.async_create_schedule(ref, msg["name"], msg["edit"], connection.user.id)
+    if schedule := await _run(connection, msg, job):
+        fire_schedule_event(hass, schedule, "created", connection.context(msg))
+        connection.send_result(msg["id"], {"schedule_id": schedule["id"], "version": schedule["version"]})
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): f"{DOMAIN}/schedule_update",
+        vol.Required("schedule_id"): str,
+        vol.Optional("edit", default=""): str,
+        vol.Exclusive("name", "field"): str,
+        vol.Exclusive("active", "field"): bool,
+        vol.Exclusive("trigger", "field"): vol.In(TRIGGERS),
+        vol.Exclusive("time", "field"): vol.Match(r"^([01]\d|2[0-3]):[0-5]\d$"),
+        vol.Exclusive("offset", "field"): int,
+        vol.Exclusive("weekdays", "field"): [vol.All(int, vol.Range(min=0, max=6))],
+        vol.Exclusive("scene_id", "field"): str,
+        vol.Exclusive("entity_id", "field"): str,
+    }
+)
+@websocket_api.async_response
+async def ws_schedule_update(hass: HomeAssistant, connection: Connection, msg: dict[str, Any]) -> None:
+    """Change exactly one field of a schedule at once (spec 4.15); switching goes to the logbook on its own."""
+    if (found := _schedule_editor(hass, connection, msg)) is None:
+        return
+    store, schedule = found
+    if len(fields := [k for k in SCHEDULE_FIELDS if k in msg]) != 1:
+        connection.send_error(msg["id"], "invalid_value", "invalid_value: one field per input")
+        return
+    field, value = fields[0], msg[fields[0]]
+    if field in ("scene_id", "entity_id"):
+        if (value := _scene_ref(hass, connection, msg, store)) is None:
+            return
+        field = "scene"
+    version = schedule["version"]
+    job = store.async_update_schedule(schedule["id"], field, value, msg["edit"], connection.user.id)
+    if (done := await _run(connection, msg, job)) is None:
+        return
+    schedule, began = done
+    if field == "active" and schedule["version"] != version:
+        fire_schedule_event(hass, schedule, "switched on" if value else "switched off", connection.context(msg))
+    elif began:
+        fire_schedule_event(hass, schedule, "changed", connection.context(msg))
+    connection.send_result(msg["id"], {"version": schedule["version"]})
+
+
+@websocket_api.websocket_command(
+    {vol.Required("type"): f"{DOMAIN}/schedule_delete", vol.Required("schedule_id"): str}
+)
+@websocket_api.async_response
+async def ws_schedule_delete(hass: HomeAssistant, connection: Connection, msg: dict[str, Any]) -> None:
+    """Delete a schedule; the card has asked with its name."""
+    if (found := _schedule_editor(hass, connection, msg)) is None:
+        return
+    store, schedule = found
+    await store.async_delete_schedule(schedule["id"])
+    fire_schedule_event(hass, schedule, "deleted", connection.context(msg))
+    connection.send_result(msg["id"])
+
+
+@websocket_api.websocket_command(
+    {vol.Required("type"): f"{DOMAIN}/schedule_move", vol.Required("schedule_id"): str, vol.Required("index"): int}
+)
+@callback
+def ws_schedule_move(hass: HomeAssistant, connection: Connection, msg: dict[str, Any]) -> None:
+    """Move a schedule to a place among those the account sees; the order applies to every account."""
+    if (found := _schedule_editor(hass, connection, msg)) is None:
+        return
+    store, schedule = found
+    visible = {s["id"] for s in store.schedules if may_see_schedule(hass, store, connection.user, s)}
+    store.move_schedule(schedule["id"], msg["index"], visible)
     connection.send_result(msg["id"])

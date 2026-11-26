@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "Resident Scenes",
-        "description": "Lets residents without admin rights create and edit scenes in a dashboard card."
+        "description": "Lets residents without admin rights create and edit scenes and schedules in a dashboard card."
       }
     },
     "abort": {
@@ -36,6 +36,7 @@
           "name_length": "Maximum name length",
           "favorite_slots": "Favorite slots per area",
           "house_favorite_slots": "Favorite slots for the house",
+          "schedules": "Schedules (whole installation)",
           "image_dir": "Image library folder (inside the config folder)",
           "image_side": "Uploaded images: longest side (pixels)",
           "image_kb": "Uploaded images: largest file (kB)",
@@ -81,6 +82,14 @@
     "broken_steps": {
       "title": "Scene {scene} has missing parts",
       "description": "These parts of the scene no longer exist or are now in another room, and are skipped when it runs: {items}. Edit the scene in the card, restore the devices or move them back."
+    },
+    "schedule_scene_missing": {
+      "title": "Schedule {schedule} does not run",
+      "description": "The scene {scene} of this schedule no longer exists, so the schedule does not run. Choose another scene in the card, or switch the schedule off or delete it."
+    },
+    "schedule_not_released": {
+      "title": "Schedule {schedule} does not run",
+      "description": "The scene {scene} of this schedule no longer has the label releasing it, so the schedule does not run. Give the scene the label again, choose another scene in the card, or switch the schedule off."
     }
   },
   "services": {
@@ -129,6 +138,13 @@
     },
     "invalid_slot": {
       "message": "Unknown favorite slot: {slot}"
+    }
+  },
+  "entity": {
+    "switch": {
+      "schedule": {
+        "name": "Schedule"
+      }
     }
   }
 }

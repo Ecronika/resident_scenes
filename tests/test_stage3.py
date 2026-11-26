@@ -89,7 +89,8 @@ async def test_migration_keeps_the_behaviour(hass, v2_data, setup, hass_storage)
     assert house["previous"]["sequence"][0]["entries"] == [{"entity_id": "light.hall", "state": "on", "attributes": {}}]
     assert store.scenes["r"]["sequence"][0]["area_id"] == "kitchen"
     await store.async_write()
-    assert hass_storage[STORAGE_KEY]["version"] == 3
+    assert hass_storage[STORAGE_KEY]["version"] == 4  # 0.7.0: schedules (format 4), the steps unchanged
+    assert hass_storage[STORAGE_KEY]["data"]["schedules"] == []
 
     on = async_mock_service(hass, "light", "turn_on")
     off = async_mock_service(hass, "light", "turn_off")

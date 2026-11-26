@@ -1,4 +1,4 @@
-"""Resident Scenes: scenes that residents without admin rights create and edit."""
+"""Resident Scenes: scenes and schedules that residents without admin rights create and edit."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ import voluptuous as vol
 from homeassistant.components.http import StaticPathConfig
 from homeassistant.config_entries import ConfigEntry, ConfigEntryState
 from homeassistant.const import ATTR_AREA_ID, Platform
-from homeassistant.core import HomeAssistant, ServiceCall, callback
+from homeassistant.core import HomeAssistant, ServiceCall, ServiceResponse, SupportsResponse, callback
 from homeassistant.exceptions import ServiceValidationError, Unauthorized
 from homeassistant.helpers import (
     area_registry as ar,
@@ -38,12 +38,13 @@ from .http import ImageView, PhotoView, UploadView
 from .issues import async_delete_issues, async_follow_removals, async_track_issues
 from .model import ValidationError, all_off_steps, can_edit, may_edit, may_see, opt
 from .runner import SceneRunner
+from .schedules import Scheduler
 from .store import SceneStore
 from .websocket import async_register
 
 _LOGGER = logging.getLogger(__name__)
 
-PLATFORMS = [Platform.SCENE]
+PLATFORMS = [Platform.SCENE, Platform.SWITCH]
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 # one or more rooms; other keys a frontend may add are ignored
 ALL_OFF_SCHEMA = vol.Schema({vol.Required(ATTR_AREA_ID): vol.All(cv.ensure_list, [cv.string])}, extra=vol.ALLOW_EXTRA)
@@ -79,7 +80,9 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     service.async_register_platform_entity_service(
         hass, DOMAIN, "capture", entity_domain=Platform.SCENE, schema=None, func=_async_capture
     )
-    hass.services.async_register(DOMAIN, "all_off", _async_all_off, schema=ALL_OFF_SCHEMA)
+    hass.services.async_register(
+        DOMAIN, "all_off", _async_all_off, schema=ALL_OFF_SCHEMA, supports_response=SupportsResponse.OPTIONAL
+    )
     hass.services.async_register(DOMAIN, "run_favorite", _async_run_favorite, schema=RUN_FAVORITE_SCHEMA)
     return True
 
@@ -125,11 +128,12 @@ async def _async_run_favorite(call: ServiceCall) -> None:
     await hass.services.async_call("scene", "turn_on", {"entity_id": entity_id}, blocking=True, context=call.context)
 
 
-async def _async_all_off(call: ServiceCall) -> None:
+async def _async_all_off(call: ServiceCall) -> ServiceResponse:
     """Switch off the released lights of rooms, and what each room adds to it (spec 4.13).
 
     A call with a user needs the room right of every room, like running a room scene; the edit
     right is not needed. Calls without a user (automations, KNX push buttons) always run.
+    The response names how many devices it took: none, and the card says so (spec 4.13, review AD6).
     """
     hass = call.hass
     entry, store = _loaded_store(hass)
@@ -145,12 +149,17 @@ async def _async_all_off(call: ServiceCall) -> None:
         _LOGGER.warning("All off in %s not run: %s has no right for this room", name, user.name)
         hass.bus.async_fire(EVENT_ALL_OFF, {"area_id": refused[0], "name": name, "refused": True}, context=call.context)
         raise Unauthorized(context=call.context)
+    total = 0
     for area_id in rooms:
         name = areas.async_get_area(area_id).name  # type: ignore[union-attr]
-        hass.bus.async_fire(EVENT_ALL_OFF, {"area_id": area_id, "name": name, "refused": False}, context=call.context)
+        steps = all_off_steps(hass, entry, area_id)
+        total += len(steps)
+        data = {"area_id": area_id, "name": name, "refused": False, "empty": not steps}
+        hass.bus.async_fire(EVENT_ALL_OFF, data, context=call.context)
         # skipped and failed devices go to the logbook under this name
         scene = {"id": f"all_off:{area_id}", "name": f"All off {name}"}
-        await store.runner.async_all_off(scene, all_off_steps(hass, entry, area_id), call.context)
+        await store.runner.async_all_off(scene, steps, call.context)
+    return {"devices": total}
 
 
 async def _async_capture(entity: Any, call: ServiceCall) -> None:
@@ -190,6 +199,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ResidentScenesConfigEntr
     await store.async_load()
     store.async_listen()
     store.runner = SceneRunner(hass, entry, store.scenes)
+    # before the entities: they show the next run the scheduler finds on a change
+    store.scheduler = Scheduler(hass, entry, store)
     entry.runtime_data = store
     labels = lr.async_get(hass)
     if labels.async_get_label(label := opt(entry, CONF_LABEL)) is None:
@@ -199,6 +210,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ResidentScenesConfigEntr
             _LOGGER.warning("Label %s could not be created, a label with this name exists", label)
     entry.async_on_unload(entry.add_update_listener(_async_options_updated))
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    store.scheduler.async_reschedule()  # missed runs are not made up (spec 4.15)
     async_track_issues(hass, entry, store)
     async_follow_removals(hass, entry, store)
 

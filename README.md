@@ -1,12 +1,12 @@
 # Resident Scenes
 
-Lets residents **without admin rights** create, edit, run and delete scenes from a dashboard card.
+Lets residents **without admin rights** create, edit, run and delete scenes and schedules from a dashboard card.
 Scenes are stored by the integration (not in YAML), survive restarts, are part of every backup and appear as normal
 `scene` entities for automations, schedules and voice.
 
 Requires Home Assistant 2026.3 or later. The card and the settings are available in English and German.
 
-Features (version 0.6):
+Features (version 0.7):
 
 - a scene editor in the card: every input is saved at once, "Done" ends editing, "New scene" creates a scene at once
 - a scene is a sequence of steps: a trade (light, shading, climate, switches, fans, music, scenes) with its ticked
@@ -27,6 +27,8 @@ Features (version 0.6):
   the card's width; a slot can be run from a push button (`resident_scenes.run_favorite`)
 - "All off" per room: switches off the released lights of the room, and per room also music, TVs and switches;
   a scene that is still running does not switch them on again; "All on" is a scene of the room named in the card
+- schedules: a scene at a time or at sunrise or sunset with an offset, on chosen weekdays, switched on and off in the
+  card or as a `switch` entity; a view of its own in the card
 - a device moved to another room drops out of the scenes of its old room (kept, named, back when the device returns)
   and moves along in house scenes
 - scene images from an installer image library or uploaded and cropped in the card
@@ -64,7 +66,7 @@ The card registers itself, no separate resource is needed.
 type: custom:resident-scenes-card
 scope: area        # area or house
 area: kitchen      # area id, only with scope: area
-view: manage       # manage, list, favorites or rights
+view: manage       # manage, list, favorites, rights or schedules
 show_rights: true  # only with view: manage; false hides the button "Permissions"
 columns: auto      # only with view: favorites; tiles per row: auto or a number
 tile_size: 104     # only with view: favorites; edge of a tile in pixels (at least 80)
@@ -127,9 +129,16 @@ type: custom:resident-scenes-card
 view: rights
 ```
 
+Schedules, one list for the house:
+
+```yaml
+type: custom:resident-scenes-card
+view: schedules
+```
+
 The view `manage` shows list and scene side by side from 600 pixels card width. In a view of type "Sections" a
 section is narrower: give the card's section several columns, or use a panel view. With `view: manage` the card asks
-for the full width of its section (`columns: full`), with `list`, `favorites` and `rights` for 12 columns.
+for the full width of its section (`columns: full`), with `list`, `favorites` and `rights` for 12 columns, with `schedules` for the full width.
 
 ## Actions
 
@@ -206,10 +215,47 @@ into a step of the new room right after its old step, so between the same delays
 following step of that room and trade before the next delay takes it, an entry of the device already there wins, and
 a step left empty goes. A device that loses its room moves into a step "No room".
 
+## Schedules
+
+A schedule runs one scene: at a time, or at sunrise or sunset with an offset of up to 180 minutes before or after, on
+the chosen weekdays (at least one). "New schedule" in the view `schedules` asks for the scene first; the new schedule is
+off until "Done" or its switch. The list shows each schedule with its switch, time and days; the order is set by
+dragging. A schedule may run every resident scene and every scene of another integration that carries the label; an
+account sees and changes only schedules whose scene it may run (room right, for a house scene the house right) and
+needs the edit right to change them. Every schedule is also a `switch` entity (`switch.<name>`, the id follows the name
+while the creating edit runs), with the next run as attribute. Switching it with a user needs the same rights;
+automations and push buttons always switch. A run has no user: the logbook names the schedule as the trigger of the
+scene, and a skipped run with its reason. The number of schedules is limited for the whole installation (default 20).
+
+Rules of the clock:
+
+- **Restart:** a run missed while Home Assistant was stopped is not made up; the schedule runs at its next moment.
+- **Changed time:** a time already past today runs tomorrow, a time still to come today runs today, also when the
+  schedule already ran today.
+- **Same moment:** several schedules of the same moment run in the order of the list.
+- **Summer time:** a time in the skipped hour (e.g. 2:30 in the night summer time begins) runs once, at 3:00; a time in
+  the doubled hour runs once, at its first occurrence.
+- **Sun:** the weekday is that of the sun event; 180 minutes after sunset on a Friday in June may run after midnight,
+  in the night to Saturday. On a day without sunrise or sunset (far north) the schedule runs on the next day that has
+  one. A new location or time zone applies to the next run.
+- **Scene gone:** when its scene is deleted (the question before deleting names the schedule) or loses the label, the
+  schedule stays, does not run, shows "Scene missing" or "Scene not released" and a repair issue names it while it is
+  on. Choose another scene or give the label again, and it runs again.
+
+A push button that switches a schedule on and off, e.g. "holiday lighting":
+
+```yaml
+triggers:
+  - {trigger: event, event_type: knx_event, event_data: {destination: "1/0/30"}}
+actions:
+  - action: switch.toggle
+    target: {entity_id: switch.holiday_lighting}
+```
+
 ## Options
 
 **Settings:** label, main users, accounts without edit right, panel accounts, panel accounts with edit right, limits
-(scenes per area, house scenes, steps per scene, name length, favorite slots per area, delay, image size and count),
+(scenes per area, house scenes, steps per scene, name length, favorite slots per area, delay, image size and count, schedules),
 favorite slots for the house (empty: as many as per area, the default, so an update changes nothing) and the image
 library folder.
 
@@ -223,6 +269,7 @@ drops its setting.
 options:
   favorite_slots: 4
   house_favorite_slots: 8      # optional, up to 12
+  schedules: 20                # optional, for the whole installation
   all_off:                     # per area id: what "All off" takes besides the lights
     living_room: [music, tv, switch]
     kitchen: [switch]

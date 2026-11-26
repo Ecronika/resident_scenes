@@ -40,5 +40,7 @@ async def async_get_config_entry_diagnostics(
         "house_scenes": sum(1 for s in store.scenes.values() if s["area_id"] is None),
         "steps": sum(len(list(entries(s["sequence"]))) for s in store.scenes.values()),
         "favorite_scopes": len(store.favorites),
+        "schedules": len(store.schedules),
+        "active_schedules": sum(1 for s in store.schedules if s["active"]),
         "images": len(store.images),
     }

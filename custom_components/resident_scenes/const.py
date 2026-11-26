@@ -3,10 +3,10 @@
 from typing import Final
 
 DOMAIN: Final = "resident_scenes"
-VERSION: Final = "0.6.0"  # keep in sync with manifest.json and the card (checked by tests)
+VERSION: Final = "0.7.0"  # keep in sync with manifest.json and the card (checked by tests)
 
 STORAGE_KEY: Final = f"{DOMAIN}.data"
-STORAGE_VERSION: Final = 3
+STORAGE_VERSION: Final = 4
 UPLOAD_FOLDER: Final = f"{DOMAIN}_images"  # inside .storage, so part of every backup
 
 SIGNAL_CHANGED: Final = f"{DOMAIN}_changed"
@@ -15,6 +15,7 @@ EVENT_SKIPPED: Final = f"{DOMAIN}_skipped"
 EVENT_RIGHTS: Final = f"{DOMAIN}_rights"
 EVENT_ALL_OFF: Final = f"{DOMAIN}_all_off"
 EVENT_FAVORITE: Final = f"{DOMAIN}_favorite"  # run_favorite on an empty slot or refused (spec 4.14)
+EVENT_SCHEDULE: Final = f"{DOMAIN}_schedule"  # runs, skipped runs and changes of schedules (spec 4.15)
 EVENT_BATCH: Final = f"{DOMAIN}_batch"  # fired by the script helper, runs one batch of steps
 
 CARD_URL: Final = f"/{DOMAIN}/resident-scenes-card.js"
@@ -52,6 +53,9 @@ CONF_HOUSE_FAVORITE_SLOTS: Final = "house_favorite_slots"
 # area id -> parts that "all off" takes beside the lights (spec 4.13); a room not listed: lights only
 CONF_ALL_OFF: Final = "all_off"
 ALL_OFF_PARTS: Final = ("music", "tv", "switch")
+CONF_SCHEDULES: Final = "schedules"  # most schedules of the installation (spec 4.1)
+TRIGGERS: Final = ("time", "sunrise", "sunset")
+MAX_OFFSET: Final = 180  # minutes before or after sunrise or sunset (spec 4.15)
 CONF_IMAGE_DIR: Final = "image_dir"
 CONF_IMAGE_SIDE: Final = "image_side"
 CONF_IMAGE_KB: Final = "image_kb"
@@ -72,6 +76,7 @@ DEFAULTS: Final[dict[str, object]] = {
     CONF_MAX_DELAY: 600,
     CONF_NAME_LENGTH: 30,
     CONF_FAVORITE_SLOTS: 4,
+    CONF_SCHEDULES: 20,
     CONF_IMAGE_DIR: "resident_scenes",
     CONF_IMAGE_SIDE: 1600,
     CONF_IMAGE_KB: 500,

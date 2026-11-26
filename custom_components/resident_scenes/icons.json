@@ -1,4 +1,14 @@
 {
+  "entity": {
+    "switch": {
+      "schedule": {
+        "default": "mdi:calendar-clock",
+        "state": {
+          "off": "mdi:calendar-remove"
+        }
+      }
+    }
+  },
   "services": {
     "capture": {
       "service": "mdi:camera-iris"

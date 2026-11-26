@@ -43,6 +43,7 @@ from .const import (
     CONF_PANELS_WITH_EDIT,
     CONF_ROOMS,
     CONF_SCENES_PER_AREA,
+    CONF_SCHEDULES,
     CONF_STEPS_PER_SCENE,
     CONF_USERS_WITHOUT_EDIT,
     CONF_USERS_WITHOUT_HOUSE,
@@ -59,6 +60,7 @@ LIMITS = {
     CONF_MAX_DELAY: 3600,
     CONF_NAME_LENGTH: 100,
     CONF_FAVORITE_SLOTS: 12,
+    CONF_SCHEDULES: 200,
     CONF_IMAGE_SIDE: 4000,
     CONF_IMAGE_KB: 5000,
     CONF_IMAGE_COUNT: 2000,
@@ -132,7 +134,8 @@ class ResidentScenesOptionsFlow(OptionsFlow):
             vol.Optional(CONF_PANELS_WITH_EDIT): user_select,
         }
         for key, maximum in LIMITS.items():
-            schema[vol.Required(key)] = NumberSelector(
+            # left empty, the schedules keep their default: an update asks nothing new (spec 4.1)
+            schema[vol.Optional(key) if key == CONF_SCHEDULES else vol.Required(key)] = NumberSelector(
                 NumberSelectorConfig(min=1, max=maximum, step=1, mode=NumberSelectorMode.BOX)
             )
             if key == CONF_FAVORITE_SLOTS:  # left empty: the house has as many as each room
